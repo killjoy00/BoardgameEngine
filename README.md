@@ -6,7 +6,7 @@ The initial product will use a BoardGameGeek collection as its source catalog, t
 
 ## Project status
 
-Planning. No technology stack has been selected and no production code has been written.
+Planning. The first release is intended to be invitation-only, with BGG user `killjoy00` as the discovery and acceptance-test account. A Google AdSense banner is a desired optional revenue feature, but it must remain disabled until BoardGameGeek grants a commercial API license and Google approves the site. No technology stack has been selected and no production code has been written.
 
 ## Core jobs
 
@@ -19,4 +19,3 @@ Play logging is deliberately outside the current scope.
 ## Start here
 
 Read the [project charter and delivery plan](docs/PROJECT_CHARTER.md). It records the product scope, BoardGameGeek data findings, proposed recommendation model, phased roadmap, risks, and decisions still to make.
-
