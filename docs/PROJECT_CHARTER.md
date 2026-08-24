@@ -1,7 +1,7 @@
 # BoardGameEngine Project Charter
 
 **Status:** Draft for validation  
-**Version:** 0.1  
+**Version:** 0.2  
 **Date:** 2026-08-24
 
 ## 1. Purpose
@@ -20,7 +20,7 @@ BoardGameEngine is not intended to replace BGG. BGG remains the system of record
 
 ## 3. Target user and jobs to be done
 
-The initial target user is a board-game collector who already maintains a meaningful BGG collection but does not want to log plays.
+The initial target user is a board-game collector who already maintains a meaningful BGG collection but does not want to log plays. Discovery and acceptance testing will use BGG user `killjoy00`. The first release will be invitation-only rather than open self-service registration; invited users should ultimately be able to connect their own public BGG collections.
 
 ### Before a game night
 
@@ -59,7 +59,8 @@ The following are proposed product acceptance targets, not assumptions about imp
 - Scraping BGG pages or relying on undocumented/private JSON endpoints.
 - Training an AI or language model on BGG data.
 - Public social-network features, reviews, forums, or universal game discovery in the MVP.
-- Monetization before BGG's commercial-license implications are understood and approved.
+- Open public registration in the initial invited-user release.
+- Activating advertising before BGG grants a commercial API license and Google approves the site for AdSense.
 
 ## 6. Research findings
 
@@ -92,6 +93,10 @@ The current [Using the XML API guide](https://boardgamegeek.com/using_the_xml_ap
 
 The [XML API terms](https://boardgamegeek.com/wiki/page/XML_API_Terms_of_Use) limit the default license to non-commercial use, require BGG credit and a linked “Powered by BGG” logo in public-facing uses, prohibit AI/LLM training with the data, and allow the API or terms to change. Commercial use requires a separate license and may be denied if BGG considers the application competitive. BGG's private JSON endpoints are explicitly not a stable or generally licensed alternative.
 
+The desired Google banner changes the license posture: BGG explicitly classifies an application that shows advertising as commercial. Its current guidance says advertising-funded applications are *usually* offered a free commercial license until 1,000 users, but approval and pricing remain case-by-case and the policy can change. The BGG application should therefore be registered as **Commercial** from the start and should describe the invitation-only pilot and proposed Google AdSense banner accurately.
+
+AdSense has a separate approval process. Google's [eligibility guidance](https://support.google.com/adsense/answer/9724/eligibility-requirements-for-adsense) requires the publisher to control the site, provide original policy-compliant content, and be at least 18. Google also has consent-management requirements for some international traffic. Advertising should be an optional integration behind a server-controlled feature flag, disabled until BGG licensing, AdSense approval, privacy disclosures, and applicable consent handling are complete. The app must remain fully usable without ads.
+
 Architecture consequences:
 
 - Keep the BGG token only on the server and out of the browser, repository, logs, and exports.
@@ -100,13 +105,16 @@ Architecture consequences:
 - Throttle sync work and batch Thing requests to 20 IDs or fewer.
 - Run occasional full collection reconciliations because incremental sync cannot detect deletions.
 - Put BGG attribution in the user interface from the first public build.
-- Treat API approval and licensing posture as an early go/no-go gate.
+- Treat commercial API approval as an early go/no-go gate for the advertised product; the fallback is a genuinely non-commercial build with no banner.
+- Keep advertising code isolated and disabled by default so it cannot accidentally run before approval.
+- Add a privacy policy and consent design before enabling Google advertising; use a Google-certified consent-management platform where Google's regional rules require one.
 
 ## 7. Product scope
 
 ### 7.1 MVP: collection sync and game picker
 
-- Connect a public BGG username and import owned base games separately from expansions.
+- Provide invitation-only access and let each invited account connect a public BGG username; use `killjoy00` for initial discovery and acceptance testing.
+- Import owned base games separately from expansions.
 - Normalize core game data: BGG ID, names, year, image, player range, playing time, age, weight, categories/mechanics, expansion relationships, community player-count poll, ratings/ranks, and freshness timestamp.
 - Query with:
   - exact player count (required);
@@ -209,13 +217,14 @@ flowchart TD
 ### Components
 
 - **Web UI:** responsive picker, collection/trade management, list import review, exports, and sync status.
-- **Application API:** authentication if needed, authorization, recommendation queries, personal metadata, and export generation.
+- **Application API:** invitation-based authentication, authorization, recommendation queries, personal metadata, and export generation.
 - **BGG adapter and sync worker:** authenticated server-side calls, XML parsing, caching, backoff, batching, and full/incremental reconciliation.
 - **Database:** normalized game facts and poll observations plus user-owned settings and copy metadata.
 - **Matching pipeline:** line parsing, ID/URL extraction, exact search, fuzzy candidates, disambiguation, and wishlist comparison.
 
 ### Initial domain model
 
+- `AppUser`: invited application user, access state, role, and linked source account
 - `SourceAccount`: BGG username and sync state
 - `Game`: canonical BGG identity and stable catalog fields
 - `GamePollSnapshot`: raw player-count votes and fetch timestamp
@@ -233,16 +242,19 @@ Technology selection is deferred to a short architecture spike. Selection criter
 
 **Work**
 
-- Register a non-commercial BGG application and request approval.
-- Identify the test BGG username and confirm which collection fields are public.
+- Register a commercial BGG application, accurately describing the invitation-only pilot and planned Google AdSense banner, and request approval.
+- Use BGG username `killjoy00` for discovery and acceptance testing; confirm which collection fields are public.
 - Capture representative Collection, Thing, Search, and queued `202` responses as sanitized fixtures.
 - Validate the player-count poll structure, vote counts, expansion relationships, edition/version data, and API error behavior.
 - Run the three scoring policies across a meaningful sample from the real collection.
-- Decide the account model, recommendation default, public/private scope, and intended monetization.
+- Define the invited-user account and invite-administration model.
+- Document AdSense eligibility, privacy/consent work, and the feature-flag gate; do not make AdSense approval a prerequisite for the functional MVP.
+- Decide the recommendation default and remaining product behaviors.
 
 **Exit criteria**
 
 - BGG access and license posture are viable.
+- The commercial license either permits the proposed banner or the project explicitly adopts the no-ad fallback.
 - The exact fields required for the MVP have test fixtures.
 - A scoring approach produces credible five-game shortlists for several table scenarios.
 - Open product decisions below have owners or explicit deferrals.
@@ -252,6 +264,7 @@ Technology selection is deferred to a short architecture spike. Selection criter
 **Work**
 
 - Implement BGG adapter, XML parsing, throttled sync, cache, retries, and full reconciliation.
+- Implement invitation-only authentication and admin-controlled invite access.
 - Build normalized game, poll, collection, and sync-run storage.
 - Build the mobile-first picker and transparent result explanations.
 - Add freshness/error states and BGG attribution.
@@ -294,6 +307,7 @@ Technology selection is deferred to a short architecture spike. Selection criter
 
 - Validate and prioritize saved profiles, combined collections, table voting, and the collection coverage map.
 - Add accessibility, privacy/export/delete controls, observability, sync administration, and deployment runbooks.
+- Add an optional AdSense slot behind a server-controlled feature flag only after BGG commercial licensing, Google site approval, privacy disclosures, and consent handling are complete.
 - Consider installable PWA/offline read support only after the core online flows are stable.
 
 ## 12. Testing strategy
@@ -309,7 +323,9 @@ Technology selection is deferred to a short architecture spike. Selection criter
 
 | Risk | Impact | Mitigation / decision gate |
 |---|---|---|
-| BGG application approval or license denied | Blocks a public API-backed product | Apply during Milestone 0; keep the first use explicitly non-commercial; do not build on private APIs |
+| BGG commercial application approval or license denied | Blocks the proposed ad-supported product | Apply as Commercial during Milestone 0 and disclose the ad plan; fallback to a genuinely non-commercial no-ad build; do not build on private APIs |
+| AdSense site approval denied or delayed | Banner cannot launch | Keep ads optional and disabled; build useful original functionality first; do not make revenue a functional dependency |
+| Advertising privacy/consent obligations are missed | Policy or legal exposure | Add privacy disclosures and consent design before ads; use required Google-certified consent tooling for applicable traffic |
 | API throttling, instability, or schema changes | Slow/broken sync | Server-side cache, batching, bounded retries, fixtures, adapter boundary, freshness UI |
 | Incremental sync misses deletions | Stale collection | Scheduled full reconciliation plus on-demand refresh |
 | Polls are sparse or biased | False precision | Show sample size and raw distribution; confidence adjustment; configurable policy |
@@ -318,25 +334,28 @@ Technology selection is deferred to a short architecture spike. Selection criter
 | BGG and app statuses conflict | User loses trust or notes | Define field ownership; never overwrite app-owned copy data during sync |
 | Scope expands into another BGG clone | Delayed useful release | Keep MVP centered on collection sync + picker; gate additional features by validation |
 
-## 14. Open decisions—do not assume
+## 14. Product decisions
 
-These questions do not block writing the charter, but they do block parts of implementation:
+### Confirmed
 
-1. What is the BGG username to use for discovery and acceptance testing?
-2. Is the first release a private personal tool, a small invited-user app, or a public multi-user product?
-3. Is there any intent to charge money, show ads, accept feature-linked donations, or support a commercial organization?
-4. Should app-specific data live only in one browser/device, or should users sign in and sync it across devices?
-5. For the default recommendation policy, should avoiding negative sentiment matter more than maximizing Best votes, or should the app begin balanced and let the user choose?
-6. When a game is marked for trade, should the picker exclude it by default, include it with a badge, or use a saved preference?
-7. Which one-click trade output matters most first: forum-ready Markdown, plain text for messages, CSV, a public link, or a BGG GeekList-compatible workflow?
-8. Should the wishlist matcher compare only base-game identity at first, or must it distinguish editions, expansions, and language from day one?
-9. Are friends' collections part of the intended early use, or a later enhancement?
+1. Use BGG username `killjoy00` for discovery and acceptance testing.
+2. Make the first release an invitation-only multi-user application, not an open public signup.
+3. Plan for an optional Google AdSense banner if feasible. This makes the intended product commercial under BGG's rules; ads remain disabled until BGG and Google approvals and the required privacy/consent work are complete.
+
+### Still open—do not assume
+
+1. Which authentication and invitation mechanism should the app use, and should app-specific data sync across devices?
+2. For the default recommendation policy, should avoiding negative sentiment matter more than maximizing Best votes, or should the app begin balanced and let the user choose?
+3. When a game is marked for trade, should the picker exclude it by default, include it with a badge, or use a saved preference?
+4. Which one-click trade output matters most first: forum-ready Markdown, plain text for messages, CSV, a public link, or a BGG GeekList-compatible workflow?
+5. Should the wishlist matcher compare only base-game identity at first, or must it distinguish editions, expansions, and language from day one?
+6. Are friends' collections part of the intended early use, or a later enhancement?
 
 ## 15. Immediate next actions
 
-1. Answer the open decisions that affect Milestone 0, especially BGG username, release audience, and monetization.
-2. Submit the BGG application registration; approval may take time.
-3. Create Milestone 0 issues for API fixtures, field mapping, scoring experiments, account model, and license/attribution requirements.
+1. Submit the BGG application registration as **Commercial**, describing the invited-user pilot and proposed Google AdSense banner; approval may take time.
+2. After BGG access is approved, use `killjoy00` to capture sanitized fixtures and validate the data model.
+3. Decide the invite/authentication approach and create Milestone 0 issues for API fixtures, field mapping, scoring experiments, account model, licensing/attribution, and advertising privacy gates.
 4. Test the three ranking policies against several real scenarios (for example 2, 4, and 6 players across light, medium, and heavy ranges).
 5. Review the resulting five-game lists manually before selecting a stack or building the interface.
 
@@ -348,4 +367,5 @@ These questions do not block writing the charter, but they do block parts of imp
 - [BGG XML API Terms of Use](https://boardgamegeek.com/wiki/page/XML_API_Terms_of_Use)
 - [BGG XML API commercial-use guidance](https://boardgamegeek.com/wiki/page/BGG_XML_API_Commercial_Use)
 - [BGG JSON API warning](https://boardgamegeek.com/wiki/page/BGG_JSON_API)
-
+- [Google AdSense eligibility requirements](https://support.google.com/adsense/answer/9724/eligibility-requirements-for-adsense)
+- [Google consent-management requirements for publishers](https://support.google.com/adsense/answer/13554116)
