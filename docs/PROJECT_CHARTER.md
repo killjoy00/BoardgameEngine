@@ -1,8 +1,8 @@
 # BoardGameEngine Project Charter
 
 **Status:** Draft for validation  
-**Version:** 0.2  
-**Date:** 2026-08-24
+**Version:** 0.3  
+**Date:** 2026-08-25
 
 ## 1. Purpose
 
@@ -33,6 +33,13 @@ The initial target user is a board-game collector who already maintains a meanin
 - Keep copy-specific trade details that BGG does not model conveniently for this workflow: edition, language, condition, completeness, notes, and availability.
 - Export the current trade list as clean text, Markdown, or CSV without reformatting it by hand.
 
+### While understanding collection cost
+
+- Identify every owned copy whose acquisition cost is unknown.
+- See the known cost of the current collection together with coverage, such as “$4,820 across 173 of 210 copies,” so an incomplete sum is never presented as a complete total.
+- Rank and filter owned copies by recorded or allocated acquisition cost.
+- Record a trade, including shipping paid, and carry the outgoing copies' acquisition costs into the received copies using an explicit allocation method.
+
 ### While evaluating a trade or sale list
 
 - Paste a list containing names, BGG URLs, or IDs.
@@ -49,7 +56,9 @@ The following are proposed product acceptance targets, not assumptions about imp
 4. If fewer than five games satisfy the constraints, the app says so and offers explicit relaxations; it never quietly violates a hard filter.
 5. A for-trade owner can bulk-edit copy details and export the current set in one action.
 6. A pasted list produces exact matches where possible, likely matches with confidence labels, and a manual-resolution queue for ambiguous titles or editions.
-7. The product remains useful without recording a single play.
+7. The library dashboard identifies copies with unknown cost, reports priced-copy coverage, totals known current-collection cost, and ranks copies by cost.
+8. A trade can remove outgoing copies and create incoming copies whose allocated acquisition costs reconcile exactly to the outgoing cost pool plus shipping and any additional cash paid.
+9. The product remains useful without recording a single play.
 
 ## 5. Non-goals for the initial project
 
@@ -60,7 +69,7 @@ The following are proposed product acceptance targets, not assumptions about imp
 - Training an AI or language model on BGG data.
 - Public social-network features, reviews, forums, or universal game discovery in the MVP.
 - Open public registration in the initial invited-user release.
-- Activating advertising before BGG grants a commercial API license and Google approves the site for AdSense.
+- Advertising or other monetization in the initial release.
 
 ## 6. Research findings
 
@@ -93,9 +102,7 @@ The current [Using the XML API guide](https://boardgamegeek.com/using_the_xml_ap
 
 The [XML API terms](https://boardgamegeek.com/wiki/page/XML_API_Terms_of_Use) limit the default license to non-commercial use, require BGG credit and a linked “Powered by BGG” logo in public-facing uses, prohibit AI/LLM training with the data, and allow the API or terms to change. Commercial use requires a separate license and may be denied if BGG considers the application competitive. BGG's private JSON endpoints are explicitly not a stable or generally licensed alternative.
 
-The desired Google banner changes the license posture: BGG explicitly classifies an application that shows advertising as commercial. Its current guidance says advertising-funded applications are *usually* offered a free commercial license until 1,000 users, but approval and pricing remain case-by-case and the policy can change. The BGG application should therefore be registered as **Commercial** from the start and should describe the invitation-only pilot and proposed Google AdSense banner accurately.
-
-AdSense has a separate approval process. Google's [eligibility guidance](https://support.google.com/adsense/answer/9724/eligibility-requirements-for-adsense) requires the publisher to control the site, provide original policy-compliant content, and be at least 18. Google also has consent-management requirements for some international traffic. Advertising should be an optional integration behind a server-controlled feature flag, disabled until BGG licensing, AdSense approval, privacy disclosures, and applicable consent handling are complete. The app must remain fully usable without ads.
+The initial invitation-only product will not display advertising or otherwise be monetized. It should therefore be registered as a **Non-commercial** BGG application. Any future decision to add ads, payments, or another money-raising mechanism must reopen the license decision and obtain BGG's commercial approval before that feature is built or enabled.
 
 Architecture consequences:
 
@@ -105,9 +112,8 @@ Architecture consequences:
 - Throttle sync work and batch Thing requests to 20 IDs or fewer.
 - Run occasional full collection reconciliations because incremental sync cannot detect deletions.
 - Put BGG attribution in the user interface from the first public build.
-- Treat commercial API approval as an early go/no-go gate for the advertised product; the fallback is a genuinely non-commercial build with no banner.
-- Keep advertising code isolated and disabled by default so it cannot accidentally run before approval.
-- Add a privacy policy and consent design before enabling Google advertising; use a Google-certified consent-management platform where Google's regional rules require one.
+- Treat non-commercial API approval as an early go/no-go gate.
+- Do not add advertising code to the initial product; future monetization requires a new licensing and product decision.
 
 ## 7. Product scope
 
@@ -126,7 +132,41 @@ Architecture consequences:
 - Allow sorting or policy selection without hiding the raw poll distribution.
 - Provide manual refresh with clear queued, failed, and last-synced states.
 
-### 7.2 Trade inventory
+### 7.2 Library and acquisition-cost management
+
+- Store cost against a physical `Copy`, not only the canonical game, so multiple copies or editions can have different costs.
+- Distinguish `unknown` from an explicit zero-cost gift. An empty price must never be silently treated as `$0`.
+- Track acquisition method (`purchase`, `trade`, `gift`, or `unknown`), currency, acquisition date when known, notes, and one of:
+  - direct purchase price; or
+  - allocated acquisition cost produced by a trade.
+- Provide a missing-cost work queue with bulk entry and filters.
+- Show:
+  - owned-copy count;
+  - copies with a known cost and copies missing cost;
+  - known current-collection cost;
+  - percentage coverage by copy count; and
+  - rankings from highest to lowest acquisition cost.
+- Label the sum “known current-collection cost” whenever any active copy is missing cost. A separate lifetime-spend ledger can be considered later; it should not be conflated with the cost carried by games still owned.
+
+#### Trade cost allocation
+
+A trade is a durable transaction joining the copies leaving the collection to the copies being received. Its allocatable cost pool is:
+
+`sum(outgoing copies' acquisition costs) + shipping paid + additional cash paid`
+
+That pool is assigned to incoming copies using an explicit method:
+
+- equal allocation;
+- user-entered percentages or amounts; or
+- proportional allocation from user-entered relative values.
+
+If only one game is received, it receives the full pool. If two games costing `$30` and `$20` leave the collection and shipping is `$15`, two equally weighted incoming games receive `$32.50` each. With 40/60 relative weights, they receive `$26.00` and `$39.00`.
+
+The allocation preview must show its inputs and calculation before confirmation. Allocations must reconcile to the cent, preserve an audit trail, and be editable by reversing or correcting the transaction rather than silently overwriting history. Missing outgoing costs must be flagged before allocation; the user may fill them in or explicitly accept a partial-cost result that remains labeled incomplete.
+
+When the trade is confirmed, outgoing copies cease contributing to current-collection cost and incoming copies begin contributing through their allocations. This transfers the recorded investment plus transaction cost without double-counting games no longer owned.
+
+### 7.3 Trade inventory
 
 - Treat a physical copy separately from the canonical game record.
 - Track status, edition/version, language, condition, completeness, notes, location, and last-updated date.
@@ -135,7 +175,7 @@ Architecture consequences:
 - Export plain text, Markdown, and CSV with canonical BGG links.
 - Provide a shareable view only after privacy and access-control decisions are made.
 
-### 7.3 Wishlist/list matcher
+### 7.4 Wishlist/list matcher
 
 - Accept pasted lines, CSV, and BGG URLs/IDs.
 - Normalize whitespace and common annotations, then resolve exact BGG IDs first and names second.
@@ -216,8 +256,8 @@ flowchart TD
 
 ### Components
 
-- **Web UI:** responsive picker, collection/trade management, list import review, exports, and sync status.
-- **Application API:** invitation-based authentication, authorization, recommendation queries, personal metadata, and export generation.
+- **Web UI:** responsive picker, collection and cost dashboard, trade calculator/management, list import review, exports, and sync status.
+- **Application API:** invitation-based authentication, authorization, recommendation queries, cost-ledger operations, trade allocation, personal metadata, and export generation.
 - **BGG adapter and sync worker:** authenticated server-side calls, XML parsing, caching, backoff, batching, and full/incremental reconciliation.
 - **Database:** normalized game facts and poll observations plus user-owned settings and copy metadata.
 - **Matching pipeline:** line parsing, ID/URL extraction, exact search, fuzzy candidates, disambiguation, and wishlist comparison.
@@ -229,7 +269,10 @@ flowchart TD
 - `Game`: canonical BGG identity and stable catalog fields
 - `GamePollSnapshot`: raw player-count votes and fetch timestamp
 - `CollectionItem`: BGG status flags, wishlist priority, personal rating, and version reference
-- `Copy`: user-managed edition, condition, language, completeness, location, notes, and trade status
+- `Copy`: user-managed edition, condition, language, completeness, location, notes, trade status, and current acquisition-cost state
+- `AcquisitionTransaction`: direct purchase, gift, trade allocation, or correction with currency and source details
+- `Trade`: outgoing and incoming copy lines, shipping/additional cash, allocation method, status, and audit history
+- `TradeAllocation`: the immutable calculated amount assigned to each received copy
 - `SavedProfile`: reusable picker filters and recommendation policy
 - `ImportedList` / `ImportedRow`: original input, normalized input, resolution state, and selected BGG ID
 - `SyncRun`: request counts, retries, outcome, and freshness
@@ -242,19 +285,19 @@ Technology selection is deferred to a short architecture spike. Selection criter
 
 **Work**
 
-- Register a commercial BGG application, accurately describing the invitation-only pilot and planned Google AdSense banner, and request approval.
+- Register a non-commercial BGG application for the invitation-only, non-monetized product and request approval.
 - Use BGG username `killjoy00` for discovery and acceptance testing; confirm which collection fields are public.
 - Capture representative Collection, Thing, Search, and queued `202` responses as sanitized fixtures.
 - Validate the player-count poll structure, vote counts, expansion relationships, edition/version data, and API error behavior.
 - Run the three scoring policies across a meaningful sample from the real collection.
 - Define the invited-user account and invite-administration model.
-- Document AdSense eligibility, privacy/consent work, and the feature-flag gate; do not make AdSense approval a prerequisite for the functional MVP.
+- Define the copy-level cost vocabulary, supported currency behavior, and trade-allocation defaults.
 - Decide the recommendation default and remaining product behaviors.
 
 **Exit criteria**
 
 - BGG access and license posture are viable.
-- The commercial license either permits the proposed banner or the project explicitly adopts the no-ad fallback.
+- The approved license permits the planned non-commercial invitation-only use.
 - The exact fields required for the MVP have test fixtures.
 - A scoring approach produces credible five-game shortlists for several table scenarios.
 - Open product decisions below have owners or explicit deferrals.
@@ -276,16 +319,21 @@ Technology selection is deferred to a short architecture spike. Selection criter
 - Results remain reproducible for the same data and policy.
 - Sparse polls, missing weights/times, expansions, and fewer-than-five results are handled explicitly.
 
-### Milestone 2 — Trade inventory and exports
+### Milestone 2 — Library costs, trade inventory, and exports
 
 **Work**
 
-- Add copy-specific fields, bulk editing, BGG for-trade reconciliation, and privacy controls.
+- Add copy-specific fields, acquisition transactions, cost-status filtering, bulk price entry, and privacy controls.
+- Add the cost dashboard: missing-price queue, priced-copy coverage, known current-collection total, and cost ranking.
+- Add trade transactions, calculation preview, equal/manual/relative-value allocations, cent reconciliation, confirmation, and correction history.
+- Add BGG for-trade reconciliation without overwriting app-owned cost data.
 - Add text, Markdown, and CSV export templates with stable BGG links.
-- Add export tests for escaping, missing edition data, and multiple copies.
+- Add calculation and export tests for unknown/zero costs, rounding, incomplete trades, escaping, missing edition data, and multiple copies.
 
 **Exit criteria**
 
+- The dashboard clearly separates unknown costs from zero-cost acquisitions and never labels a partial sum as complete.
+- Cost allocations always equal the confirmed trade cost pool to the cent and remain auditable.
 - The owner can update and export the entire current trade list without manual reformatting.
 - Re-syncing from BGG does not overwrite app-owned notes or copy metadata.
 
@@ -307,7 +355,6 @@ Technology selection is deferred to a short architecture spike. Selection criter
 
 - Validate and prioritize saved profiles, combined collections, table voting, and the collection coverage map.
 - Add accessibility, privacy/export/delete controls, observability, sync administration, and deployment runbooks.
-- Add an optional AdSense slot behind a server-controlled feature flag only after BGG commercial licensing, Google site approval, privacy disclosures, and consent handling are complete.
 - Consider installable PWA/offline read support only after the core online flows are stable.
 
 ## 12. Testing strategy
@@ -315,23 +362,27 @@ Technology selection is deferred to a short architecture spike. Selection criter
 - **Contract fixtures:** sanitized official API payloads for normal, missing, queued, throttled, and malformed cases.
 - **Parser tests:** collection status flags, expansions, version fields, polls, missing statistics, and HTML/XML entities.
 - **Recommendation tests:** exact-count eligibility, hard-filter integrity, small samples, ties, divisive polls, missing polls, and deterministic ordering.
+- **Cost-ledger tests:** unknown versus zero, multiple copies, current-collection totals, coverage, ranking, trade reversals, partial-cost warnings, and currencies.
+- **Allocation tests:** one-to-one and many-to-many trades, equal/manual/relative weights, shipping and cash additions, deterministic cent rounding, and exact reconciliation.
 - **Matcher tests:** BGG URLs, numeric IDs, punctuation, alternate titles, duplicate names, editions, expansions, and intentionally unresolved rows.
 - **Export snapshots:** plain text, Markdown, and CSV escaping across multiple copies and incomplete metadata.
-- **End-to-end scenarios:** sync → pick five; update copies → export; paste list → review → wishlist matches.
+- **End-to-end scenarios:** sync → pick five; fill missing costs → verify total; record trade → allocate costs; update copies → export; paste list → review → wishlist matches.
 
 ## 13. Major risks and mitigations
 
 | Risk | Impact | Mitigation / decision gate |
 |---|---|---|
-| BGG commercial application approval or license denied | Blocks the proposed ad-supported product | Apply as Commercial during Milestone 0 and disclose the ad plan; fallback to a genuinely non-commercial no-ad build; do not build on private APIs |
-| AdSense site approval denied or delayed | Banner cannot launch | Keep ads optional and disabled; build useful original functionality first; do not make revenue a functional dependency |
-| Advertising privacy/consent obligations are missed | Policy or legal exposure | Add privacy disclosures and consent design before ads; use required Google-certified consent tooling for applicable traffic |
+| BGG non-commercial application approval denied | Blocks the API-backed product | Apply during Milestone 0 with the accurate invitation-only, no-ad scope; do not build on private APIs |
 | API throttling, instability, or schema changes | Slow/broken sync | Server-side cache, batching, bounded retries, fixtures, adapter boundary, freshness UI |
 | Incremental sync misses deletions | Stale collection | Scheduled full reconciliation plus on-demand refresh |
 | Polls are sparse or biased | False precision | Show sample size and raw distribution; confidence adjustment; configurable policy |
 | Weight conflates rules load and strategic depth | Poor “medium-heavy” fit for some users | Treat weight as a coarse filter; later add manual teach/brain-burn tags |
 | Titles and editions are ambiguous | Incorrect wishlist matches | Prefer IDs/URLs, show candidates, and require confirmation |
 | BGG and app statuses conflict | User loses trust or notes | Define field ownership; never overwrite app-owned copy data during sync |
+| “Price paid” and allocated trade cost are conflated | Misleading totals | Store direct price and allocated acquisition cost with provenance; label current-collection cost and coverage explicitly |
+| Outgoing trade costs are missing | Incoming allocations appear complete when they are not | Block or explicitly label partial allocation; require confirmation of the warning |
+| Multiple currencies are mixed | Invalid totals and rankings | Choose a base-currency policy before implementation; never sum currencies without an explicit conversion rule |
+| Allocation rounding loses or creates pennies | Ledger does not reconcile | Use integer minor units and a deterministic remainder rule; assert exact reconciliation in tests |
 | Scope expands into another BGG clone | Delayed useful release | Keep MVP centered on collection sync + picker; gate additional features by validation |
 
 ## 14. Product decisions
@@ -340,7 +391,8 @@ Technology selection is deferred to a short architecture spike. Selection criter
 
 1. Use BGG username `killjoy00` for discovery and acceptance testing.
 2. Make the first release an invitation-only multi-user application, not an open public signup.
-3. Plan for an optional Google AdSense banner if feasible. This makes the intended product commercial under BGG's rules; ads remain disabled until BGG and Google approvals and the required privacy/consent work are complete.
+3. Keep the initial product non-commercial and forgo the Google AdSense banner. Any future monetization requires a new BGG licensing decision.
+4. Manage acquisition costs at the physical-copy level, flag missing costs, show known current-collection cost and coverage, rank copies by cost, and allocate outgoing costs plus shipping to games received in trades.
 
 ### Still open—do not assume
 
@@ -350,12 +402,16 @@ Technology selection is deferred to a short architecture spike. Selection criter
 4. Which one-click trade output matters most first: forum-ready Markdown, plain text for messages, CSV, a public link, or a BGG GeekList-compatible workflow?
 5. Should the wishlist matcher compare only base-game identity at first, or must it distinguish editions, expansions, and language from day one?
 6. Are friends' collections part of the intended early use, or a later enhancement?
+7. Should the initial release support only one base currency (recommended for the MVP), or are multi-currency purchases required immediately?
+8. For direct purchases, should “price paid” include tax and shipping, or should those be stored separately and optionally included?
+9. Which trade allocation should be the default: equal split, manual amounts, or user-entered relative values? Equal split is simplest; relative values are more representative when incoming games differ substantially.
+10. Should gifts default to an explicit `$0` acquisition cost, or remain unknown until the user chooses?
 
 ## 15. Immediate next actions
 
-1. Submit the BGG application registration as **Commercial**, describing the invited-user pilot and proposed Google AdSense banner; approval may take time.
+1. Submit the BGG application registration as **Non-commercial**, describing the invited-user, no-ad product; approval may take time.
 2. After BGG access is approved, use `killjoy00` to capture sanitized fixtures and validate the data model.
-3. Decide the invite/authentication approach and create Milestone 0 issues for API fixtures, field mapping, scoring experiments, account model, licensing/attribution, and advertising privacy gates.
+3. Decide the invite/authentication approach, cost/currency rules, and default trade allocation; create Milestone 0 issues for API fixtures, field mapping, scoring experiments, account model, licensing/attribution, and cost-ledger design.
 4. Test the three ranking policies against several real scenarios (for example 2, 4, and 6 players across light, medium, and heavy ranges).
 5. Review the resulting five-game lists manually before selecting a stack or building the interface.
 
@@ -367,5 +423,3 @@ Technology selection is deferred to a short architecture spike. Selection criter
 - [BGG XML API Terms of Use](https://boardgamegeek.com/wiki/page/XML_API_Terms_of_Use)
 - [BGG XML API commercial-use guidance](https://boardgamegeek.com/wiki/page/BGG_XML_API_Commercial_Use)
 - [BGG JSON API warning](https://boardgamegeek.com/wiki/page/BGG_JSON_API)
-- [Google AdSense eligibility requirements](https://support.google.com/adsense/answer/9724/eligibility-requirements-for-adsense)
-- [Google consent-management requirements for publishers](https://support.google.com/adsense/answer/13554116)
