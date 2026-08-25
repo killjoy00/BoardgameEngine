@@ -6,11 +6,13 @@ The initial product will use a BoardGameGeek collection as its source catalog, t
 
 ## Project status
 
-Planning. The first release is intended to be invitation-only, with BGG user `killjoy00` as the discovery and acceptance-test account. A Google AdSense banner is a desired optional revenue feature, but it must remain disabled until BoardGameGeek grants a commercial API license and Google approves the site. No technology stack has been selected and no production code has been written.
+Planning. The first release is intended to be invitation-only, with BGG user `killjoy00` as the discovery and acceptance-test account. The initial product will be non-commercial; advertising is out of scope. No technology stack has been selected and no production code has been written.
 
 ## Core jobs
 
 - Enter a player count plus optional weight and time constraints; receive five owned-game recommendations with understandable reasons.
+- Track copy-level acquisition costs, identify missing prices, total the known investment in the current collection, and rank copies by cost.
+- Record a trade and allocate outgoing-game costs plus shipping across the games received.
 - Track copies offered for trade, including condition and edition notes, and export a clean shareable list in one click.
 - Paste game names or BoardGameGeek links and find confirmed or possible matches on the user's wishlist.
 
