@@ -264,6 +264,16 @@ flowchart TD
 - **Database:** normalized game facts and poll observations plus user-owned settings and copy metadata.
 - **Matching pipeline:** line parsing, ID/URL extraction, exact search, fuzzy candidates, disambiguation, and wishlist comparison.
 
+### Selected foundation
+
+- **Runtime and hosting:** Cloudflare Workers, with the existing public site remaining on GitHub Pages until the application is ready to replace it.
+- **Database:** Cloudflare D1, accessed only by server-side Worker code.
+- **Authentication:** invitation-only email magic links sent through Resend from `login@boardgames.planitnow.us`.
+- **Magic-link safety:** opening a link only shows a confirmation screen. A separate POST consumes the token, preventing mail scanners or accidental clicks from invalidating it. Each email also includes a copyable URL and short code.
+- **Token lifetime:** 30 minutes. Store only hashes of login tokens, codes, and sessions.
+- **Invitation administration:** only the initial administrator, `killjoy00@yahoo.com`, may invite accounts in the first release.
+- **CSV import:** accept the BGG CSV through the authenticated website; blank `pricepaid` values become unknown-cost copies in the missing-cost queue. Treat purchase `pricepaid` as inclusive of purchase tax and shipping.
+
 ### Initial domain model
 
 - `AppUser`: invited application user, access state, role, and linked source account
