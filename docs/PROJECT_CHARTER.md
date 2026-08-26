@@ -134,8 +134,10 @@ Architecture consequences:
 
 ### 7.2 Library and acquisition-cost management
 
+- Support USD only in the first release. Store money as integer cents and do not introduce implicit currency conversion.
 - Store cost against a physical `Copy`, not only the canonical game, so multiple copies or editions can have different costs.
 - Distinguish `unknown` from an explicit zero-cost gift. An empty price must never be silently treated as `$0`.
+- Store item price and shipping separately and show their combined acquisition cost.
 - Track acquisition method (`purchase`, `trade`, `gift`, or `unknown`), currency, acquisition date when known, notes, and one of:
   - direct purchase price; or
   - allocated acquisition cost produced by a trade.
@@ -286,7 +288,9 @@ Technology selection is deferred to a short architecture spike. Selection criter
 **Work**
 
 - Register a non-commercial BGG application for the invitation-only, non-monetized product and request approval.
+- Publish the public product, privacy, and terms pages before registration so BGG can review a live application website.
 - Use BGG username `killjoy00` for discovery and acceptance testing; confirm which collection fields are public.
+- Inspect a private `killjoy00` collection CSV locally, document its column mapping with a sanitized fixture, and never commit the original export or its pricing data.
 - Capture representative Collection, Thing, Search, and queued `202` responses as sanitized fixtures.
 - Validate the player-count poll structure, vote counts, expansion relationships, edition/version data, and API error behavior.
 - Run the three scoring policies across a meaningful sample from the real collection.
@@ -393,6 +397,10 @@ Technology selection is deferred to a short architecture spike. Selection criter
 2. Make the first release an invitation-only multi-user application, not an open public signup.
 3. Keep the initial product non-commercial and forgo the Google AdSense banner. Any future monetization requires a new BGG licensing decision.
 4. Manage acquisition costs at the physical-copy level, flag missing costs, show known current-collection cost and coverage, rank copies by cost, and allocate outgoing costs plus shipping to games received in trades.
+5. Support USD only in the first release; keep unknown cost distinct from an explicit `$0` gift.
+6. Store direct item price and shipping separately while presenting their combined acquisition cost.
+7. Default trade allocation to an equal split, with editable percentages or values available before saving.
+8. Treat the private BGG CSV as user-supplied import data. Keep the original export and pricing details out of source control; commit only sanitized fixtures.
 
 ### Still open—do not assume
 
@@ -402,18 +410,17 @@ Technology selection is deferred to a short architecture spike. Selection criter
 4. Which one-click trade output matters most first: forum-ready Markdown, plain text for messages, CSV, a public link, or a BGG GeekList-compatible workflow?
 5. Should the wishlist matcher compare only base-game identity at first, or must it distinguish editions, expansions, and language from day one?
 6. Are friends' collections part of the intended early use, or a later enhancement?
-7. Should the initial release support only one base currency (recommended for the MVP), or are multi-currency purchases required immediately?
-8. For direct purchases, should “price paid” include tax and shipping, or should those be stored separately and optionally included?
-9. Which trade allocation should be the default: equal split, manual amounts, or user-entered relative values? Equal split is simplest; relative values are more representative when incoming games differ substantially.
-10. Should gifts default to an explicit `$0` acquisition cost, or remain unknown until the user chooses?
+7. Should direct-purchase tax be stored separately from item price, like shipping, or included in item price?
+8. When importing a CSV row with a blank price, should the first release create an unknown-cost copy automatically or require confirmation during import review?
 
 ## 15. Immediate next actions
 
-1. Submit the BGG application registration as **Non-commercial**, describing the invited-user, no-ad product; approval may take time.
-2. After BGG access is approved, use `killjoy00` to capture sanitized fixtures and validate the data model.
-3. Decide the invite/authentication approach, cost/currency rules, and default trade allocation; create Milestone 0 issues for API fixtures, field mapping, scoring experiments, account model, licensing/attribution, and cost-ledger design.
-4. Test the three ranking policies against several real scenarios (for example 2, 4, and 6 players across light, medium, and heavy ranges).
-5. Review the resulting five-game lists manually before selecting a stack or building the interface.
+1. Deploy the public site and verify its product, privacy, and terms URLs, then submit the BGG application registration as **Non-commercial**, describing the invited-user, no-ad product; approval may take time.
+2. Inspect the private `killjoy00` CSV without committing it, document its fields, and create a minimal sanitized CSV fixture for import development.
+3. After BGG access is approved, use `killjoy00` to capture sanitized API fixtures and validate the data model.
+4. Decide the invite/authentication approach; create Milestone 0 issues for API fixtures, CSV field mapping, scoring experiments, account model, licensing/attribution, and cost-ledger design.
+5. Test the three ranking policies against several real scenarios (for example 2, 4, and 6 players across light, medium, and heavy ranges).
+6. Review the resulting five-game lists manually before selecting the application stack or building authenticated features.
 
 ## 16. Sources
 
