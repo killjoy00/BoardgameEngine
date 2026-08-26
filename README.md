@@ -6,7 +6,11 @@ The initial product will use a BoardGameGeek collection as its source catalog, t
 
 ## Project status
 
-Planning. The first release is intended to be invitation-only, with BGG user `killjoy00` as the discovery and acceptance-test account. The initial product will be non-commercial; advertising is out of scope. No technology stack has been selected and no production code has been written.
+Early development. The repository includes a responsive static product site suitable for BGG application review and initial deployment. The first release is intended to be invitation-only, with BGG user `killjoy00` as the discovery and acceptance-test account. The initial product will be non-commercial; advertising is out of scope.
+
+## Run the public site
+
+The public site has no build-time dependencies and can be deployed directly to any static host. Run `npm start`, open [http://localhost:3000](http://localhost:3000), and use `npm run check` for source checks.
 
 ## Core jobs
 

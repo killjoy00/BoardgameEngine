@@ -1,0 +1,9 @@
+{
+  "name": "boardgameengine-public-site",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "start": "node scripts/serve.mjs",
+    "check": "node scripts/check.mjs"
+  }
+}
