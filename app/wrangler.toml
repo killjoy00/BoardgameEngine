@@ -1,0 +1,13 @@
+name = "boardgameengine"
+main = "src/index.ts"
+compatibility_date = "2026-08-26"
+
+[vars]
+APP_ORIGIN = "https://boardgames.planitnow.us"
+EMAIL_FROM = "BoardGameEngine <login@boardgames.planitnow.us>"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "boardgameengine"
+database_id = "replace-after-running-wrangler-d1-create"
+migrations_dir = "migrations"
