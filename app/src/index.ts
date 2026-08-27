@@ -3,11 +3,13 @@ import { getCookie, setCookie } from "hono/cookie";
 import { expiresIn, hash, isEmail, LOGIN_TOKEN_MINUTES, normalizeEmail, randomCode, randomToken } from "./auth";
 import { sendSignInEmail } from "./email";
 import { appPage, confirmPage, signInPage, type AppUser } from "./ui";
+import api from "./api";
 
 type Bindings = { DB: D1Database; EMAIL_FROM: string; RESEND_API_KEY: string };
 type User = { id: string; email: string };
 type AppContext = Context<{ Bindings: Bindings }>;
 const app = new Hono<{ Bindings: Bindings }>();
+app.route("/api",api);
 
 app.get("/api/health", (context) => context.json({ ok: true }));
 app.get("/", async c => (await currentUser(c)) ? c.redirect("/app") : c.html(signInPage()));
@@ -72,13 +74,17 @@ async function consumeToken(context: AppContext, column: "token_hash" | "code_ha
   if (!consumed.meta.changes) return context.json({ error: "The sign-in request has already been used." }, 400);
 
   const session = randomToken();
+  await context.env.DB.batch([
+    context.env.DB.prepare("UPDATE users SET accepted_at=COALESCE(accepted_at,CURRENT_TIMESTAMP) WHERE id=?").bind(record.user_id),
+    context.env.DB.prepare("UPDATE invitations SET status='accepted',accepted_at=COALESCE(accepted_at,CURRENT_TIMESTAMP) WHERE id=? AND status='pending'").bind(record.user_id)
+  ]);
   await context.env.DB.prepare("INSERT INTO sessions (id, user_id, token_hash) VALUES (?, ?, ?)")
     .bind(crypto.randomUUID(), record.user_id, await hash(session)).run();
   setSessionCookie(context, session);
   return context.redirect("/app");
 }
 
-async function protectedApp(c:AppContext,section:string){const user=await currentUser(c);if(!user)return c.redirect("/sign-in");const allowed=["library","missing-prices","import","trades","picker"];if(section==="invitations"&&user.role==="admin")return c.html(appPage(user,section));return c.html(appPage(user,allowed.includes(section)?section:"library"))}
+async function protectedApp(c:AppContext,section:string){const user=await currentUser(c);if(!user)return c.redirect("/sign-in");const allowed=["library","missing-prices","import","trades","picker","matcher"];if(section==="invitations"&&user.role==="admin")return c.html(appPage(user,section));return c.html(appPage(user,allowed.includes(section)?section:"library"))}
 async function currentUser(c:AppContext):Promise<AppUser|null>{const raw=getCookie(c,"bge_session");if(!raw)return null;const h=await hash(raw);const user=await c.env.DB.prepare("SELECT users.email, users.role FROM sessions JOIN users ON users.id=sessions.user_id WHERE sessions.token_hash=?").bind(h).first<AppUser>();if(!user)return null;await c.env.DB.prepare("UPDATE sessions SET last_seen_at=? WHERE token_hash=?").bind(new Date().toISOString(),h).run();setSessionCookie(c,raw);return user}
 
 export default app;

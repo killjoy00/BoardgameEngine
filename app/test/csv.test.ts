@@ -1,0 +1,2 @@
+import{describe,it,expect}from"vitest";import{mapCollectionCsv,parseCsv}from"../src/csv";
+describe("CSV",()=>{it("parses quoted commas",()=>expect(parseCsv('a,b\n"x,y",z\n')[1]).toEqual(["x,y","z"]));it("keeps blank cost unknown and flags quantity",()=>{const r=mapCollectionCsv("objectid,objectname,quantity,pricepaid,privatecomment\n1,Test,2,,secret\n")[0];expect(r.priceMinor).toBeNull();expect(r.privateComment).toBe("secret");expect(r.warnings).toContain("Quantity above one requires selection")})});
