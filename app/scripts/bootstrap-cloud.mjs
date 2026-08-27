@@ -5,7 +5,7 @@ for (const name of required) {
   if (!process.env[name]) throw new Error(`${name} is required`);
 }
 
-const accountId = process.env.CLOUDFLARE_ACCOUNT_ID;
+let accountId = process.env.CLOUDFLARE_ACCOUNT_ID;
 const cloudflareToken = process.env.CLOUDFLARE_API_TOKEN;
 const resendToken = process.env.RESEND_API_KEY;
 const sendingDomain = "boardgames.planitnow.us";
@@ -30,6 +30,12 @@ const resend = async (path, options = {}) => {
   if (!response.ok) throw new Error(`Resend ${path} failed (${response.status}): ${JSON.stringify(body)}`);
   return body;
 };
+
+const accounts = await cf("/accounts");
+if (!accounts.some((account) => account.id === accountId)) {
+  if (accounts.length !== 1) throw new Error("CLOUDFLARE_ACCOUNT_ID is not accessible and the token does not identify exactly one fallback account");
+  accountId = accounts[0].id;
+}
 
 const databases = await cf(`/accounts/${accountId}/d1/database`);
 let database = databases.find((candidate) => candidate.name === "boardgameengine");
