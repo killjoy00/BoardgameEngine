@@ -1,4 +1,4 @@
-import { readFile, writeFile } from "node:fs/promises";
+import { appendFile, readFile, writeFile } from "node:fs/promises";
 
 const token = process.env.CLOUDFLARE_API_TOKEN;
 if (!token) throw new Error("CLOUDFLARE_API_TOKEN is required");
@@ -16,6 +16,7 @@ const accounts = await get("/accounts");
 const configured = process.env.CLOUDFLARE_ACCOUNT_ID;
 const account = accounts.find((item) => item.id === configured) ?? (accounts.length === 1 ? accounts[0] : null);
 if (!account) throw new Error("The token must provide exactly one account when the configured account ID is unavailable");
+if (process.env.GITHUB_ENV) await appendFile(process.env.GITHUB_ENV, `CLOUDFLARE_ACCOUNT_ID=${account.id}\n`);
 const databases = await get(`/accounts/${account.id}/d1/database`);
 const database = databases.find((item) => item.name === "boardgameengine");
 if (!database) throw new Error("The boardgameengine D1 database was not found");
