@@ -67,7 +67,10 @@ const zoneId = zones[0].id;
 
 for (const record of domain.records) {
   if (!["TXT", "MX", "CNAME"].includes(record.type)) continue;
-  const name = record.name.endsWith(zoneName) ? record.name : `${record.name}.${sendingDomain}`;
+  const name = record.name.endsWith(zoneName)
+    ? record.name
+    : record.name.includes(".") ? `${record.name}.${zoneName}` : `${record.name}.${sendingDomain}`;
+  const legacyName = record.name.endsWith(zoneName) ? null : `${record.name}.${sendingDomain}`;
   const content = record.value.replace(/^"|"$/g, "");
   const payload = {
     type: record.type,
@@ -82,6 +85,10 @@ for (const record of domain.records) {
     await cf(`/zones/${zoneId}/dns_records/${existing[0].id}`, { method: "PUT", body: JSON.stringify(payload) });
   } else {
     await cf(`/zones/${zoneId}/dns_records`, { method: "POST", body: JSON.stringify(payload) });
+  }
+  if (legacyName && legacyName !== name) {
+    const legacy = await cf(`/zones/${zoneId}/dns_records?type=${record.type}&name=${encodeURIComponent(legacyName)}`);
+    for (const obsolete of legacy) await cf(`/zones/${zoneId}/dns_records/${obsolete.id}`, { method: "DELETE" });
   }
 }
 
