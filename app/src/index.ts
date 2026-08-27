@@ -3,7 +3,7 @@ import { getCookie, setCookie } from "hono/cookie";
 import { expiresIn, hash, isEmail, LOGIN_TOKEN_MINUTES, normalizeEmail, randomCode, randomToken } from "./auth";
 import { sendSignInEmail } from "./email";
 
-type Bindings = { DB: D1Database; APP_ORIGIN: string; EMAIL_FROM: string; RESEND_API_KEY: string };
+type Bindings = { DB: D1Database; EMAIL_FROM: string; RESEND_API_KEY: string };
 type User = { id: string; email: string };
 type AppContext = Context<{ Bindings: Bindings }>;
 const app = new Hono<{ Bindings: Bindings }>();
@@ -22,7 +22,7 @@ app.post("/auth/request", async (context) => {
   const code = randomCode();
   await context.env.DB.prepare("INSERT INTO login_tokens (id, user_id, token_hash, code_hash, expires_at) VALUES (?, ?, ?, ?, ?)")
     .bind(crypto.randomUUID(), user.id, await hash(token), await hash(code), expiresIn(LOGIN_TOKEN_MINUTES)).run();
-  const url = `${context.env.APP_ORIGIN}/auth/confirm?token=${encodeURIComponent(token)}`;
+  const url = `${new URL(context.req.url).origin}/auth/confirm?token=${encodeURIComponent(token)}`;
   await sendSignInEmail({ apiKey: context.env.RESEND_API_KEY, from: context.env.EMAIL_FROM, to: user.email, url, code });
   return context.json(neutral, 202);
 });
@@ -48,9 +48,21 @@ app.post("/auth/code", async (context) => {
 app.get("/api/session", async (context) => {
   const raw = getCookie(context, "bge_session");
   if (!raw) return context.json({ authenticated: false }, 401);
-  const session = await context.env.DB.prepare("SELECT users.email, users.role FROM sessions JOIN users ON users.id = sessions.user_id WHERE sessions.token_hash = ? AND sessions.expires_at > ?")
-    .bind(await hash(raw), new Date().toISOString()).first();
-  return session ? context.json({ authenticated: true, user: session }) : context.json({ authenticated: false }, 401);
+  const sessionHash = await hash(raw);
+  const session = await context.env.DB.prepare("SELECT users.email, users.role FROM sessions JOIN users ON users.id = sessions.user_id WHERE sessions.token_hash = ?")
+    .bind(sessionHash).first();
+  if (!session) return context.json({ authenticated: false }, 401);
+  await context.env.DB.prepare("UPDATE sessions SET last_seen_at = ? WHERE token_hash = ?")
+    .bind(new Date().toISOString(), sessionHash).run();
+  setSessionCookie(context, raw);
+  return context.json({ authenticated: true, user: session });
+});
+
+app.post("/auth/logout", async (context) => {
+  const raw = getCookie(context, "bge_session");
+  if (raw) await context.env.DB.prepare("DELETE FROM sessions WHERE token_hash = ?").bind(await hash(raw)).run();
+  setCookie(context, "bge_session", "", { httpOnly: true, secure: true, sameSite: "Lax", path: "/", maxAge: 0 });
+  return context.redirect("/");
 });
 
 async function consumeToken(context: AppContext, column: "token_hash" | "code_hash", value: string, userId?: string) {
@@ -64,9 +76,9 @@ async function consumeToken(context: AppContext, column: "token_hash" | "code_ha
   if (!consumed.meta.changes) return context.json({ error: "The sign-in request has already been used." }, 400);
 
   const session = randomToken();
-  await context.env.DB.prepare("INSERT INTO sessions (id, user_id, token_hash, expires_at) VALUES (?, ?, ?, ?)")
-    .bind(crypto.randomUUID(), record.user_id, await hash(session), expiresIn(60 * 24 * 30)).run();
-  setCookie(context, "bge_session", session, { httpOnly: true, secure: true, sameSite: "Lax", path: "/", maxAge: 60 * 60 * 24 * 30 });
+  await context.env.DB.prepare("INSERT INTO sessions (id, user_id, token_hash) VALUES (?, ?, ?)")
+    .bind(crypto.randomUUID(), record.user_id, await hash(session)).run();
+  setSessionCookie(context, session);
   return context.redirect("/app");
 }
 
@@ -74,4 +86,10 @@ export default app;
 
 function escapeHtml(value: string): string {
   return value.replace(/[&<>"']/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[character] ?? character);
+}
+
+function setSessionCookie(context: AppContext, session: string): void {
+  // Browsers commonly cap persistent cookies near 400 days. Refreshing it on
+  // authenticated use keeps active users signed in until they explicitly leave.
+  setCookie(context, "bge_session", session, { httpOnly: true, secure: true, sameSite: "Lax", path: "/", maxAge: 60 * 60 * 24 * 400 });
 }

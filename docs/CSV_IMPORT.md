@@ -16,12 +16,14 @@ objectname,objectid,rating,numplays,weight,own,fortrade,want,wanttobuy,wanttopla
 | `collid` | Source collection-row ID used for reconciliation |
 | `objectname` / `originalname` | Display and original titles |
 | `own`, `fortrade`, `want`, `wishlist`, `wishlistpriority` | Source collection states |
-| `quantity` | Number of physical copies represented by the row |
+| `quantity` | Number of physical copies represented by the row; blank does not create an owned copy |
 | `pricepaid`, `pp_currency` | Known purchase cost and currency; purchase tax and shipping are already included |
 | blank `pricepaid` | Unknown cost; create the copy and add it to the missing-cost queue |
 | numeric zero `pricepaid` | Explicit known zero cost; do not add it to the missing-cost queue |
 | `acquisitiondate`, `acquiredfrom` | Optional acquisition provenance |
-| `conditiontext`, `privatecomment`, `invlocation`, `invdate` | Private copy metadata |
+| `conditiontext`, `privatecomment`, `invlocation`, `invdate` | Private copy metadata imported for its owner |
 | `version_*`, `language`, `year` | Edition metadata |
 
 The importer must parse CSV quoting rather than splitting on commas, validate identifiers and money, preserve unrecognized columns in the preview, and never log row contents containing private comments or prices.
+
+Rows with a blank `quantity` may still carry wishlist or other collection statuses, but do not create a physical owned copy. A zero quantity likewise creates no copy. An invalid quantity blocks that row in import review.
