@@ -1,6 +1,7 @@
 name = "boardgameengine"
 main = "src/index.ts"
 compatibility_date = "2026-08-26"
+workers_dev = false
 routes = [
   { pattern = "boardgames.planitnow.us/sign-in*", zone_name = "planitnow.us" },
   { pattern = "boardgames.planitnow.us/app*", zone_name = "planitnow.us" },
