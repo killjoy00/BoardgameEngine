@@ -2,6 +2,7 @@ import { Hono, type Context } from "hono";
 import { getCookie, setCookie } from "hono/cookie";
 import { expiresIn, hash, isEmail, LOGIN_TOKEN_MINUTES, normalizeEmail, randomCode, randomToken } from "./auth";
 import { sendSignInEmail } from "./email";
+import { appPage, confirmPage, signInPage, type AppUser } from "./ui";
 
 type Bindings = { DB: D1Database; EMAIL_FROM: string; RESEND_API_KEY: string };
 type User = { id: string; email: string };
@@ -9,6 +10,9 @@ type AppContext = Context<{ Bindings: Bindings }>;
 const app = new Hono<{ Bindings: Bindings }>();
 
 app.get("/api/health", (context) => context.json({ ok: true }));
+app.get("/", async c => (await currentUser(c)) ? c.redirect("/app") : c.html(signInPage()));
+app.get("/app", c => protectedApp(c,"library"));
+app.get("/app/:section", c => protectedApp(c,c.req.param("section")));
 
 app.post("/auth/request", async (context) => {
   const body = await context.req.parseBody();
@@ -24,12 +28,12 @@ app.post("/auth/request", async (context) => {
     .bind(crypto.randomUUID(), user.id, await hash(token), await hash(code), expiresIn(LOGIN_TOKEN_MINUTES)).run();
   const url = `${new URL(context.req.url).origin}/auth/confirm?token=${encodeURIComponent(token)}`;
   await sendSignInEmail({ apiKey: context.env.RESEND_API_KEY, from: context.env.EMAIL_FROM, to: user.email, url, code });
-  return context.json(neutral, 202);
+  return context.req.header("Accept")?.includes("text/html") ? context.html(signInPage(neutral.message),202) : context.json(neutral,202);
 });
 
 app.get("/auth/confirm", (context) => {
   const token = context.req.query("token") ?? "";
-  return context.html(`<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Confirm sign-in</title><body><main><h1>Confirm sign-in</h1><p>This link has not been consumed.</p><form method="post" action="/auth/confirm"><input type="hidden" name="token" value="${escapeHtml(token)}"><button type="submit">Continue signing in</button></form></main></body></html>`);
+  return context.html(confirmPage(token));
 });
 
 app.post("/auth/confirm", async (context) => {
@@ -46,16 +50,7 @@ app.post("/auth/code", async (context) => {
 });
 
 app.get("/api/session", async (context) => {
-  const raw = getCookie(context, "bge_session");
-  if (!raw) return context.json({ authenticated: false }, 401);
-  const sessionHash = await hash(raw);
-  const session = await context.env.DB.prepare("SELECT users.email, users.role FROM sessions JOIN users ON users.id = sessions.user_id WHERE sessions.token_hash = ?")
-    .bind(sessionHash).first();
-  if (!session) return context.json({ authenticated: false }, 401);
-  await context.env.DB.prepare("UPDATE sessions SET last_seen_at = ? WHERE token_hash = ?")
-    .bind(new Date().toISOString(), sessionHash).run();
-  setSessionCookie(context, raw);
-  return context.json({ authenticated: true, user: session });
+  const user=await currentUser(context); return user?context.json({authenticated:true,user}):context.json({authenticated:false},401);
 });
 
 app.post("/auth/logout", async (context) => {
@@ -82,11 +77,10 @@ async function consumeToken(context: AppContext, column: "token_hash" | "code_ha
   return context.redirect("/app");
 }
 
-export default app;
+async function protectedApp(c:AppContext,section:string){const user=await currentUser(c);if(!user)return c.redirect("/");const allowed=["library","missing-prices","import","trades","picker"];if(section==="invitations"&&user.role==="admin")return c.html(appPage(user,section));return c.html(appPage(user,allowed.includes(section)?section:"library"))}
+async function currentUser(c:AppContext):Promise<AppUser|null>{const raw=getCookie(c,"bge_session");if(!raw)return null;const h=await hash(raw);const user=await c.env.DB.prepare("SELECT users.email, users.role FROM sessions JOIN users ON users.id=sessions.user_id WHERE sessions.token_hash=?").bind(h).first<AppUser>();if(!user)return null;await c.env.DB.prepare("UPDATE sessions SET last_seen_at=? WHERE token_hash=?").bind(new Date().toISOString(),h).run();setSessionCookie(c,raw);return user}
 
-function escapeHtml(value: string): string {
-  return value.replace(/[&<>"']/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[character] ?? character);
-}
+export default app;
 
 function setSessionCookie(context: AppContext, session: string): void {
   // Browsers commonly cap persistent cookies near 400 days. Refreshing it on
