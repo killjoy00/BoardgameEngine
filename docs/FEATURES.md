@@ -33,6 +33,6 @@
 ## Collection workspace release
 
 - **Library explorer:** search by title or BGG ID, filter missing-price/for-trade/wishlist copies, sort by title/cost/recent edit, and edit copy cost and private metadata in place.
-- **Import reconciliation:** guided quantity choices, changed-cost and missing-copy queues, plus durable import summaries showing affected review counts.
+- **Import reconciliation:** guided quantity choices, bounded large-import processing with visible progress/errors, changed-cost and missing-copy queues, plus durable import summaries showing affected review counts.
 - **Trade ledger:** counterparty, date, notes, allocation confirmation, searchable history, line-item detail, reversal, and Markdown-first for-trade export.
 - **Reliability:** expanded UI contract tests, a weekly private D1 export workflow, and documented deploy, restore-drill, and incident procedures.

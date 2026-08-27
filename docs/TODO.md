@@ -43,4 +43,5 @@
 ## Real CSV acceptance finding
 
 - [x] Treat a BGG row with `own=1` and blank quantity as one physical copy.
+- [x] Process large CSV confirmations in bounded chunks with visible progress and errors.
 - [ ] Reimport the owner's CSV and verify copy count, known total, price coverage, private fields, and missing-price queue.
