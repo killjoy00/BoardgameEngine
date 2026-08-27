@@ -29,3 +29,10 @@
 - Server-side validation of confirmed import rows, invitation actions, review actions, and trade money, IDs, titles, weights, and duplicate outgoing copies.
 - Escaped dynamic browser rendering and a test that compiles the emitted client JavaScript.
 - Owner-scoped JSON data export, recent non-sensitive audit events, and confirmed account deletion for non-administrator accounts.
+
+## Collection workspace release
+
+- **Library explorer:** search by title or BGG ID, filter missing-price/for-trade/wishlist copies, sort by title/cost/recent edit, and edit copy cost and private metadata in place.
+- **Import reconciliation:** guided quantity choices, changed-cost and missing-copy queues, plus durable import summaries showing affected review counts.
+- **Trade ledger:** counterparty, date, notes, allocation confirmation, searchable history, line-item detail, reversal, and Markdown-first for-trade export.
+- **Reliability:** expanded UI contract tests, a weekly private D1 export workflow, and documented deploy, restore-drill, and incident procedures.

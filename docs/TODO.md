@@ -30,3 +30,12 @@
 - [x] Add magic-link rate limiting, expired-token cleanup, security headers, same-origin enforcement, and output escaping.
 - [ ] Add backup/restore drills, structured redacted operational logs, and operational runbooks.
 - [ ] Add browser-level end-to-end tests for imports, invitations, costs, trades, exports, matching, and recommendations.
+
+## Collection workspace release
+
+- [x] Add a searchable, filterable, sortable library and in-place copy editor.
+- [x] Add import history reports alongside changed-cost, missing-copy, and quantity reconciliation.
+- [x] Add trade metadata, history, detail, and reversal controls.
+- [x] Add scheduled D1 exports and a restore/incident runbook.
+- [ ] Complete a production restore drill and record the result.
+- [ ] Add authenticated browser automation once a dedicated non-production test account and inbox are available.
