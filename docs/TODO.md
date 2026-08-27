@@ -39,3 +39,8 @@
 - [x] Add scheduled D1 exports and a restore/incident runbook.
 - [ ] Complete a production restore drill and record the result.
 - [ ] Add authenticated browser automation once a dedicated non-production test account and inbox are available.
+
+## Real CSV acceptance finding
+
+- [x] Treat a BGG row with `own=1` and blank quantity as one physical copy.
+- [ ] Reimport the owner's CSV and verify copy count, known total, price coverage, private fields, and missing-price queue.
