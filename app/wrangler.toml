@@ -3,7 +3,6 @@ main = "src/index.ts"
 compatibility_date = "2026-08-26"
 
 [vars]
-APP_ORIGIN = "https://boardgames.planitnow.us"
 EMAIL_FROM = "BoardGameEngine <login@boardgames.planitnow.us>"
 
 [[d1_databases]]

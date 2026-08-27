@@ -273,6 +273,9 @@ flowchart TD
 - **Token lifetime:** 30 minutes. Store only hashes of login tokens, codes, and sessions.
 - **Invitation administration:** only the initial administrator, `killjoy00@yahoo.com`, may invite accounts in the first release.
 - **CSV import:** accept the BGG CSV through the authenticated website; blank `pricepaid` values become unknown-cost copies in the missing-cost queue. Treat purchase `pricepaid` as inclusive of purchase tax and shipping.
+- **Sessions:** keep active users signed in until they explicitly sign out. Refresh the persistent cookie on use and revoke the server-side session on sign-out.
+- **Invitation controls:** the administrator can send, resend, and revoke pending invitations; disable accounts; and view invitation and acceptance status.
+- **Private CSV fields:** import private comments, inventory locations, and related private metadata for the owning user. A blank or zero `quantity` creates no physical owned copy.
 
 ### Initial domain model
 
