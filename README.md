@@ -12,7 +12,7 @@ Early development. The repository includes a responsive static product site suit
 
 The public site has no build-time dependencies and can be deployed directly to any static host. Run `npm start`, open [http://localhost:3000](http://localhost:3000), and use `npm run check` for source checks.
 
-The authenticated Cloudflare application lives in `app/`. Run `cd app`, `npm ci`, `npx wrangler d1 migrations apply DB --local`, and `npm run dev` for local development; use `npm run check` for its TypeScript and unit-test suite. See the [pre-BGG release notes](docs/PRE_BGG_RELEASE.md) for the features that work without live API access.
+The authenticated Cloudflare application lives in `app/`. Run `cd app`, `npm ci`, `npx wrangler d1 migrations apply DB --local`, and `npm run dev` for local development; use `npm run check` for its TypeScript and unit-test suite. See the [feature status](docs/FEATURES.md), [delivery TODO](docs/TODO.md), and [pre-BGG release notes](docs/PRE_BGG_RELEASE.md) for the work available before live API access.
 
 ## Core jobs
 
