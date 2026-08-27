@@ -134,7 +134,7 @@ Architecture consequences:
 
 ### 7.2 Library and acquisition-cost management
 
-- Support USD only in the first release. Store money as integer cents and do not introduce implicit currency conversion.
+- Store money as integer minor units and treat each user's imported ledger as one consistent currency. Preserve a supplied currency label, but do not convert or mix currencies implicitly.
 - Store cost against a physical `Copy`, not only the canonical game, so multiple copies or editions can have different costs.
 - Distinguish `unknown` from an explicit zero-cost gift. An empty price must never be silently treated as `$0`.
 - Store item price and shipping separately and show their combined acquisition cost.
@@ -410,7 +410,7 @@ Technology selection is deferred to a short architecture spike. Selection criter
 2. Make the first release an invitation-only multi-user application, not an open public signup.
 3. Keep the initial product non-commercial and forgo the Google AdSense banner. Any future monetization requires a new BGG licensing decision.
 4. Manage acquisition costs at the physical-copy level, flag missing costs, show known current-collection cost and coverage, rank copies by cost, and allocate outgoing costs plus shipping to games received in trades.
-5. Support USD only in the first release; keep unknown cost distinct from an explicit `$0` gift.
+5. Keep the first-release ledger currency-agnostic while assuming each user uses one consistent currency; keep unknown cost distinct from an explicit zero-cost gift.
 6. Store direct item price and shipping separately while presenting their combined acquisition cost.
 7. Default trade allocation to an equal split, with editable percentages or values available before saving.
 8. Treat the private BGG CSV as user-supplied import data. Keep the original export and pricing details out of source control; commit only sanitized fixtures.

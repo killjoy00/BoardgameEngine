@@ -65,6 +65,16 @@ const zones = await cf(`/zones?name=${encodeURIComponent(zoneName)}&account.id=$
 if (zones.length !== 1) throw new Error(`Expected one Cloudflare zone for ${zoneName}, found ${zones.length}`);
 const zoneId = zones[0].id;
 
+const siteRecords = await cf(`/zones/${zoneId}/dns_records?name=${encodeURIComponent(sendingDomain)}`);
+for (const siteRecord of siteRecords.filter((record) => record.type === "CNAME" || record.type === "A" || record.type === "AAAA")) {
+  if (!siteRecord.proxied) {
+    await cf(`/zones/${zoneId}/dns_records/${siteRecord.id}`, {
+      method: "PATCH",
+      body: JSON.stringify({ proxied: true })
+    });
+  }
+}
+
 for (const record of domain.records) {
   if (!["TXT", "MX", "CNAME"].includes(record.type)) continue;
   const name = record.name.endsWith(zoneName)

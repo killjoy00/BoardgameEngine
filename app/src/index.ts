@@ -11,6 +11,7 @@ const app = new Hono<{ Bindings: Bindings }>();
 
 app.get("/api/health", (context) => context.json({ ok: true }));
 app.get("/", async c => (await currentUser(c)) ? c.redirect("/app") : c.html(signInPage()));
+app.get("/sign-in", async c => (await currentUser(c)) ? c.redirect("/app") : c.html(signInPage()));
 app.get("/app", c => protectedApp(c,"library"));
 app.get("/app/:section", c => protectedApp(c,c.req.param("section")));
 
