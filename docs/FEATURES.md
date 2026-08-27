@@ -21,3 +21,11 @@
 - Replace fixture candidates with the owner's collection and show five live, explainable recommendations.
 - Resolve unknown pasted names through BGG Search while preserving explicit ambiguity review.
 - Validate actual throttling, batching, backoff, freshness, attribution, and deletion reconciliation behavior.
+
+## Hardening available now
+
+- Same-origin enforcement for state-changing requests plus frame, MIME-sniffing, referrer, permissions, and content-security headers.
+- Neutral per-address and per-email magic-link rate limits with automatic expired-token and counter cleanup.
+- Server-side validation of confirmed import rows, invitation actions, review actions, and trade money, IDs, titles, weights, and duplicate outgoing copies.
+- Escaped dynamic browser rendering and a test that compiles the emitted client JavaScript.
+- Owner-scoped JSON data export, recent non-sensitive audit events, and confirmed account deletion for non-administrator accounts.
