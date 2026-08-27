@@ -25,5 +25,8 @@
 
 ## Later hardening
 
-- [ ] Add account data export/deletion, backup/restore drills, audit views, rate limiting, structured redacted logs, and operational runbooks.
+- [x] Add account data export and confirmed deletion for non-administrator accounts.
+- [x] Add a recent non-sensitive audit view and event trail for imports, invitations, trades, reversals, and exports.
+- [x] Add magic-link rate limiting, expired-token cleanup, security headers, same-origin enforcement, and output escaping.
+- [ ] Add backup/restore drills, structured redacted operational logs, and operational runbooks.
 - [ ] Add browser-level end-to-end tests for imports, invitations, costs, trades, exports, matching, and recommendations.

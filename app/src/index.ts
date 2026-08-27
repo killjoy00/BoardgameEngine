@@ -9,6 +9,19 @@ type Bindings = { DB: D1Database; EMAIL_FROM: string; RESEND_API_KEY: string };
 type User = { id: string; email: string };
 type AppContext = Context<{ Bindings: Bindings }>;
 const app = new Hono<{ Bindings: Bindings }>();
+app.use("*", async (context, next) => {
+  const method = context.req.method;
+  const origin = context.req.header("Origin");
+  if (!["GET", "HEAD", "OPTIONS"].includes(method) && origin && origin !== new URL(context.req.url).origin) {
+    return context.json({ error: "Cross-origin request rejected" }, 403);
+  }
+  await next();
+  context.header("X-Content-Type-Options", "nosniff");
+  context.header("X-Frame-Options", "DENY");
+  context.header("Referrer-Policy", "strict-origin-when-cross-origin");
+  context.header("Permissions-Policy", "camera=(), microphone=(), geolocation=(), payment=()");
+  context.header("Content-Security-Policy", "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'");
+});
 app.route("/api",api);
 
 app.get("/api/health", (context) => context.json({ ok: true }));
@@ -22,6 +35,24 @@ app.post("/auth/request", async (context) => {
   const email = normalizeEmail(String(body.email ?? ""));
   const neutral = { message: "If that address is invited, a sign-in email is on its way." };
   if (!isEmail(email)) return context.json(neutral, 202);
+  const interval = 15 * 60_000;
+  const bucket = Math.floor(Date.now() / interval);
+  const address = context.req.header("CF-Connecting-IP") ?? "local";
+  const emailKey = await hash(`email|${email}|${bucket}`);
+  const addressKey = await hash(`address|${address}|${bucket}`);
+  const expiresAt = new Date((bucket + 1) * interval).toISOString();
+  const increment = "INSERT INTO auth_rate_limits(key,attempts,expires_at) VALUES(?,1,?) ON CONFLICT(key) DO UPDATE SET attempts=attempts+1";
+  await context.env.DB.batch([
+    context.env.DB.prepare("DELETE FROM auth_rate_limits WHERE expires_at < ?").bind(new Date().toISOString()),
+    context.env.DB.prepare("DELETE FROM login_tokens WHERE expires_at < ?").bind(new Date().toISOString()),
+    context.env.DB.prepare(increment).bind(emailKey, expiresAt),
+    context.env.DB.prepare(increment).bind(addressKey, expiresAt)
+  ]);
+  const [emailRate, addressRate] = await Promise.all([
+    context.env.DB.prepare("SELECT attempts FROM auth_rate_limits WHERE key=?").bind(emailKey).first<{ attempts: number }>(),
+    context.env.DB.prepare("SELECT attempts FROM auth_rate_limits WHERE key=?").bind(addressKey).first<{ attempts: number }>()
+  ]);
+  if ((emailRate?.attempts ?? 0) > 5 || (addressRate?.attempts ?? 0) > 20) return context.req.header("Accept")?.includes("text/html") ? context.html(signInPage(neutral.message), 202) : context.json(neutral, 202);
   const user = await context.env.DB.prepare("SELECT id, email FROM users WHERE email = ?").bind(email).first<User>();
   if (!user) return context.json(neutral, 202);
 
@@ -84,7 +115,7 @@ async function consumeToken(context: AppContext, column: "token_hash" | "code_ha
   return context.redirect("/app");
 }
 
-async function protectedApp(c:AppContext,section:string){const user=await currentUser(c);if(!user)return c.redirect("/sign-in");const allowed=["library","missing-prices","import","trades","picker","matcher"];if(section==="invitations"&&user.role==="admin")return c.html(appPage(user,section));return c.html(appPage(user,allowed.includes(section)?section:"library"))}
+async function protectedApp(c:AppContext,section:string){const user=await currentUser(c);if(!user)return c.redirect("/sign-in");const allowed=["library","missing-prices","import","trades","picker","matcher","account"];if(section==="invitations"&&user.role==="admin")return c.html(appPage(user,section));return c.html(appPage(user,allowed.includes(section)?section:"library"))}
 async function currentUser(c:AppContext):Promise<AppUser|null>{const raw=getCookie(c,"bge_session");if(!raw)return null;const h=await hash(raw);const user=await c.env.DB.prepare("SELECT users.email, users.role FROM sessions JOIN users ON users.id=sessions.user_id WHERE sessions.token_hash=?").bind(h).first<AppUser>();if(!user)return null;await c.env.DB.prepare("UPDATE sessions SET last_seen_at=? WHERE token_hash=?").bind(new Date().toISOString(),h).run();setSessionCookie(c,raw);return user}
 
 export default app;
