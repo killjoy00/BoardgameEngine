@@ -1,4 +1,4 @@
-import { readFile, writeFile } from "node:fs/promises";
+import { appendFile, readFile, writeFile } from "node:fs/promises";
 
 const required = ["CLOUDFLARE_API_TOKEN", "CLOUDFLARE_ACCOUNT_ID", "RESEND_API_KEY"];
 for (const name of required) {
@@ -36,6 +36,7 @@ if (!accounts.some((account) => account.id === accountId)) {
   if (accounts.length !== 1) throw new Error("CLOUDFLARE_ACCOUNT_ID is not accessible and the token does not identify exactly one fallback account");
   accountId = accounts[0].id;
 }
+if (process.env.GITHUB_ENV) await appendFile(process.env.GITHUB_ENV, `CLOUDFLARE_ACCOUNT_ID=${accountId}\n`);
 
 const databases = await cf(`/accounts/${accountId}/d1/database`);
 let database = databases.find((candidate) => candidate.name === "boardgameengine");
