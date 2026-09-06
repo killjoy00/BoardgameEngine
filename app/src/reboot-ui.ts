@@ -78,7 +78,8 @@ function renderResults(data){
     const titleBlock=node('div','title-block');
     const title=node('h3','',game.name);
     const sub=node('div','game-sub');
-    sub.append(node('span','',game.minutes+' min'),node('span','',weightLabel(game.weight)+' '+Number(game.weight).toFixed(2)),node('span','',game.cooperative?'Cooperative':'Competitive'));
+    sub.append(node('span','',game.minutes+' min'),node('span','',weightLabel(game.weight)+' '+Number(game.weight).toFixed(2)));
+    if(game.cooperative)sub.append(node('span','','Cooperative'));
     titleBlock.append(title,sub);
     const score=node('div','positive-stat');score.append(node('strong','',game.positivePercent+'%'),node('span','','positive'));
     titleRow.append(titleBlock,score);body.append(titleRow);
@@ -92,7 +93,7 @@ function renderResults(data){
   });
   const relax=data.relaxations||[];show('relaxations',relax.length>0);const ul=$('relax-list');ul.replaceChildren();relax.forEach(value=>ul.append(node('li','',value)));show('results',true);$('results').scrollIntoView({behavior:'smooth',block:'start'})
 }
-$('connect-form').addEventListener('submit',connect);$('sync-button').addEventListener('click',startSync);$('change-user').addEventListener('click',changeUser);$('picker-form').addEventListener('submit',pick);$('rerun').addEventListener('click',()=>{$('picker-form').scrollIntoView({behavior:'smooth',block:'start')});load()
+$('connect-form').addEventListener('submit',connect);$('sync-button').addEventListener('click',startSync);$('change-user').addEventListener('click',changeUser);$('picker-form').addEventListener('submit',pick);$('rerun').addEventListener('click',()=>{$('picker-form').scrollIntoView({behavior:'smooth',block:'start'})});load()
 })();`;
 
 const styles=`
