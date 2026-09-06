@@ -1,445 +1,375 @@
 # BoardGameEngine Project Charter
 
-**Status:** Draft for validation  
-**Version:** 0.3  
-**Date:** 2026-08-25
+**Status:** Active reboot charter  
+**Version:** 1.0  
+**Date:** 2026-09-06
 
 ## 1. Purpose
 
-BoardGameEngine will be a mobile-friendly, collection-first decision tool layered on top of BoardGameGeek (BGG). It should make it fast to choose an appropriate game from a real library and easier to prepare, compare, and share trade inventory.
+BoardGameEngine exists to answer one question exceptionally well:
 
-The project begins from a common mismatch: a publisher's printed player range says a game *can* support a table size, while community experience may show that it does not work well there. BGG contains a useful Best / Recommended / Not Recommended poll for each player count, but its display and filtering do not always answer the user's practical question. The linked community discussion demonstrates several legitimate interpretations: some people combine Best and Recommended into positive sentiment; some avoid any count with a sizable Not Recommended share; and others want the complete distribution rather than a single label.
+> **Given the people at the table and the games actually available to us, what should we play?**
 
-BoardGameEngine will preserve that information, explain how it ranks games, and let the user tune how conservative it should be.
+BoardGameGeek (BGG) remains the source of truth for game identity, community data, and public collection status. BoardGameEngine is the decision layer on top of that data.
 
-## 2. Vision
+The primary product is not collection accounting, trade bookkeeping, a BGG replacement, or another board-game database. It is a **game-night decision engine**.
 
-> Given the people and constraints at the table, surface the five games from the user's collection that are most likely to fit—and make every recommendation explainable.
+A successful session should feel like:
 
-BoardGameEngine is not intended to replace BGG. BGG remains the system of record for game identity, community data, and the user's collection statuses. BoardGameEngine adds a faster decision layer, user-owned organization, and trade workflows.
+**Sync shelf → describe table → receive five credible choices → understand why → choose a game.**
 
-## 3. Target user and jobs to be done
+Everything else must either improve that loop or remain secondary.
 
-The initial target user is a board-game collector who already maintains a meaningful BGG collection but does not want to log plays. Discovery and acceptance testing will use BGG user `killjoy00`. The first release will be invitation-only rather than open self-service registration; invited users should ultimately be able to connect their own public BGG collections.
+## 2. Product thesis
 
-### Before a game night
+A publisher player range answers whether a game *can* support a table size. The BGG `suggested_numplayers` poll contains a different and more useful signal: how the community actually feels about that exact player count, split into **Best**, **Recommended**, and **Not Recommended**.
 
-- “We have four people and want something medium-to-heavy. Give me five strong options from games we actually own.”
-- Narrow by exact player count, community suitability, complexity, available time, and optional personal tags.
-- Understand why each game was selected and what compromises it carries.
+BoardGameEngine combines that exact-count evidence with the user's real shelf, time available, and desired complexity. It must keep the evidence visible rather than hiding it behind a proprietary score.
 
-### While managing the collection
+The product should make choosing easier, not replace the group's judgment.
 
-- Keep copy-specific trade details that BGG does not model conveniently for this workflow: edition, language, condition, completeness, notes, and availability.
-- Export the current trade list as clean text, Markdown, or CSV without reformatting it by hand.
+## 3. Product hierarchy
 
-### While understanding collection cost
-
-- Identify every owned copy whose acquisition cost is unknown.
-- See the known cost of the current collection together with coverage, such as “$4,820 across 173 of 210 copies,” so an incomplete sum is never presented as a complete total.
-- Rank and filter owned copies by recorded or allocated acquisition cost.
-- Record a trade, including shipping paid, and carry the outgoing copies' acquisition costs into the received copies using an explicit allocation method.
-
-### While evaluating a trade or sale list
-
-- Paste a list containing names, BGG URLs, or IDs.
-- Compare resolved games against the user's wishlist and wishlist priorities.
-- Separate confirmed matches from ambiguous names that need review; never silently guess an edition.
-
-## 4. Goals and validation criteria
-
-The following are proposed product acceptance targets, not assumptions about implementation technology:
-
-1. A user can connect a BGG username, sync an owned collection, and see when the data was last refreshed.
-2. A query with player count and weight returns up to five owned base games, ordered by exact-count community fit rather than only printed min/max players.
-3. Every result explains its printed range, weight, time, Best / Recommended / Not Recommended shares, vote sample size, and any confidence or threshold adjustment.
-4. If fewer than five games satisfy the constraints, the app says so and offers explicit relaxations; it never quietly violates a hard filter.
-5. A for-trade owner can bulk-edit copy details and export the current set in one action.
-6. A pasted list produces exact matches where possible, likely matches with confidence labels, and a manual-resolution queue for ambiguous titles or editions.
-7. The library dashboard identifies copies with unknown cost, reports priced-copy coverage, totals known current-collection cost, and ranks copies by cost.
-8. A trade can remove outgoing copies and create incoming copies whose allocated acquisition costs reconcile exactly to the outgoing cost pool plus shipping and any additional cash paid.
-9. The product remains useful without recording a single play.
-
-## 5. Non-goals for the initial project
-
-- Play logging, statistics, streaks, challenges, or “shelf of shame” calculations based on plays.
-- Replacing BGG as the canonical game database or collection editor.
-- A marketplace, payment flow, shipping service, or automated valuation engine.
-- Scraping BGG pages or relying on undocumented/private JSON endpoints.
-- Training an AI or language model on BGG data.
-- Public social-network features, reviews, forums, or universal game discovery in the MVP.
-- Open public registration in the initial invited-user release.
-- Advertising or other monetization in the initial release.
-
-## 6. Research findings
-
-### 6.1 The community problem is real but the desired interpretation varies
-
-The motivating [r/boardgames discussion](https://www.reddit.com/r/boardgames/comments/1qo0xax/an_issue_i_have_with_bgg_recommended_player_counts/) identifies an important presentation problem. If a poll is 12% Best, 43% Recommended, and 45% Not Recommended, BGG may emphasize the largest individual bucket even though 55% of votes are positive when Best and Recommended are combined. Other commenters reasonably argue that a 45% negative share is itself a serious warning.
-
-Product conclusion: store and display all three counts. Treat “positive majority,” “low downside,” and “best at this count” as different signals. A ranking policy must be visible and configurable.
-
-### 6.2 Supported BGG data path
-
-The official [BGG XML API2 documentation](https://boardgamegeek.com/wiki/page/BGG_XML_API2) exposes the supported foundation:
-
-| Need | Supported source | Relevant data or behavior |
+| Tier | Product area | Direction |
 |---|---|---|
-| Identify games from pasted text | Search endpoint | Name search, exact search, BGG IDs, item type |
-| Sync a user's library | Collection endpoint | Owned status, for-trade status, wishlist and priority, want/want-to-play/want-to-buy flags, ratings, versions, and optional statistics |
-| Enrich games | Thing endpoint | Core metadata, links, images, community polls, and optional rating/rank statistics |
-| Incremental refresh | Collection `modifiedsince` | Returns additions and status changes, but not deletions; periodic full reconciliation is still required |
-| Batch enrichment | Thing endpoint | At most 20 IDs per request |
-| Collection availability | Collection response | A `202` means the export is queued and should be retried with delay |
+| Core | BGG synchronization | Build and harden now |
+| Core | Exact-table recommendation engine | Build and calibrate now |
+| Core | Mobile-first live picker | Build and validate now |
+| Core | Explainable recommendations | Build and validate now |
+| High value | Combined/group libraries | Next major product capability |
+| High value | Saved table profiles | After the single-user picker is credible |
+| High value | Shareable shortlist / table vote | Validate after live picker |
+| Supporting | Wishlist/list matcher | Keep; upgrade with BGG Search |
+| Supporting | Collection explorer | Keep |
+| Secondary | Private BGG CSV import | Keep for data unavailable through public API |
+| Secondary | Cost tracking and trade ledger | Preserve; freeze major expansion until core product is validated |
+| Optional later | BGG play-history signals | Consider without adding BoardGameEngine play logging |
+| Out of scope | Marketplace, payments, social network, BGG replacement | Do not build |
 
-The Thing payload includes the community player-count poll used for Best / Recommended / Not Recommended calculations. The first technical spike should capture representative live payloads and freeze them as test fixtures before designing the permanent schema.
+## 4. Core user experience
 
-The API also documents an expansion-classification quirk in collection responses. Base games and expansions should be fetched/reconciled deliberately rather than trusting the default subtype alone.
+### Connect the shelf
 
-### 6.3 Access, licensing, and operational constraints
+An invited user supplies a public BGG username. BoardGameEngine synchronizes owned base games server-side through the approved XML API2 application token.
 
-The current [Using the XML API guide](https://boardgamegeek.com/using_the_xml_api) says application registration and authorization are generally required. Approved applications receive a Bearer token. BGG recommends server-side requests, caching, and minimizing traffic; client-side use risks exposing the token. The guide also says registration approval may take a week or more.
+The browser never receives the BGG application token.
 
-The [XML API terms](https://boardgamegeek.com/wiki/page/XML_API_Terms_of_Use) limit the default license to non-commercial use, require BGG credit and a linked “Powered by BGG” logo in public-facing uses, prohibit AI/LLM training with the data, and allow the API or terms to change. Commercial use requires a separate license and may be denied if BGG considers the application competitive. BGG's private JSON endpoints are explicitly not a stable or generally licensed alternative.
+Collection/source titles are retained separately from canonical Thing titles. This matters in real data: the same BGG ID may appear under a collection-facing title such as `6 nimmt!` while Thing's primary canonical title is `Take 5`.
 
-The initial invitation-only product will not display advertising or otherwise be monetized. It should therefore be registered as a **Non-commercial** BGG application. Any future decision to add ads, payments, or another money-raising mechanism must reopen the license decision and obtain BGG's commercial approval before that feature is built or enabled.
+### Sync and enrich
 
-Architecture consequences:
+Collection synchronization establishes availability and BGG statuses. Thing enrichment supplies canonical metadata and the exact-player-count poll.
 
-- Keep the BGG token only on the server and out of the browser, repository, logs, and exports.
-- Cache normalized game and poll data; do not request BGG data on every page view.
-- Add bounded retries and backoff for `202`, `500`, and `503` responses.
-- Throttle sync work and batch Thing requests to 20 IDs or fewer.
-- Run occasional full collection reconciliations because incremental sync cannot detect deletions.
-- Put BGG attribution in the user interface from the first public build.
-- Treat non-commercial API approval as an early go/no-go gate.
-- Do not add advertising code to the initial product; future monetization requires a new licensing and product decision.
+The first sync may require many Thing batches. Sync progress must therefore be durable, resumable, and visible rather than held inside one long browser or Worker request.
 
-## 7. Product scope
+The picker normally reads cached D1 data and makes **zero BGG requests**.
 
-### 7.1 MVP: collection sync and game picker
+### Describe tonight's table
 
-- Provide invitation-only access and let each invited account connect a public BGG username; use `killjoy00` for initial discovery and acceptance testing.
-- Import owned base games separately from expansions.
-- Normalize core game data: BGG ID, names, year, image, player range, playing time, age, weight, categories/mechanics, expansion relationships, community player-count poll, ratings/ranks, and freshness timestamp.
-- Query with:
-  - exact player count (required);
-  - weight range (optional);
-  - available time (optional);
-  - include/exclude expansions and games marked for trade (explicit toggles);
-  - optional personal tags, once available.
-- Return up to five results with a concise “why this fits” explanation.
-- Allow sorting or policy selection without hiding the raw poll distribution.
-- Provide manual refresh with clear queued, failed, and last-synced states.
+The initial picker asks for:
 
-### 7.2 Library and acquisition-cost management
+- exact player count;
+- available time;
+- desired complexity range; and
+- whether games marked for trade may be considered.
 
-- Store money as integer minor units and treat each user's imported ledger as one consistent currency. Preserve a supplied currency label, but do not convert or mix currencies implicitly.
-- Store cost against a physical `Copy`, not only the canonical game, so multiple copies or editions can have different costs.
-- Distinguish `unknown` from an explicit zero-cost gift. An empty price must never be silently treated as `$0`.
-- Store item price and shipping separately and show their combined acquisition cost.
-- Track acquisition method (`purchase`, `trade`, `gift`, or `unknown`), currency, acquisition date when known, notes, and one of:
-  - direct purchase price; or
-  - allocated acquisition cost produced by a trade.
-- Provide a missing-cost work queue with bulk entry and filters.
-- Show:
-  - owned-copy count;
-  - copies with a known cost and copies missing cost;
-  - known current-collection cost;
-  - percentage coverage by copy count; and
-  - rankings from highest to lowest acquisition cost.
-- Label the sum “known current-collection cost” whenever any active copy is missing cost. A separate lifetime-spend ledger can be considered later; it should not be conflated with the cost carried by games still owned.
+Games marked for trade are excluded by default.
 
-#### Trade cost allocation
+### Get a shortlist
 
-A trade is a durable transaction joining the copies leaving the collection to the copies being received. Its allocatable cost pool is:
+BoardGameEngine returns up to five games actually owned by the user. Every result shows the relevant BGG vote sample and its Best / Recommended / Not Recommended distribution.
 
-`sum(outgoing copies' acquisition costs) + shipping paid + additional cash paid`
+If fewer than five games satisfy the hard constraints, the product returns fewer than five and offers explicit possible relaxations. It never silently violates a hard filter.
 
-That pool is assigned to incoming copies using an explicit method:
+## 5. BGG integration contract
 
-- equal allocation;
-- user-entered percentages or amounts; or
-- proportional allocation from user-entered relative values.
+BoardGameEngine uses the approved BGG application token only from the server and follows the official XML API2 path.
 
-If only one game is received, it receives the full pool. If two games costing `$30` and `$20` leave the collection and shipping is `$15`, two equally weighted incoming games receive `$32.50` each. With 40/60 relative weights, they receive `$26.00` and `$39.00`.
+### Collection
 
-The allocation preview must show its inputs and calculation before confirmation. Allocations must reconcile to the cent, preserve an audit trail, and be editable by reversing or correcting the transaction rather than silently overwriting history. Missing outgoing costs must be flagged before allocation; the user may fill them in or explicitly accept a partial-cost result that remains labeled incomplete.
+Collection is used for public ownership and relevant collection statuses.
 
-When the trade is confirmed, outgoing copies cease contributing to current-collection cost and incoming copies begin contributing through their allocations. This transfers the recorded investment plus transaction cost without double-counting games no longer owned.
+Base games are requested deliberately with the documented expansion workaround rather than relying on the default subtype behavior.
 
-### 7.3 Trade inventory
+A full collection response that unexpectedly contains zero owned base games is treated as unsafe and does **not** reconcile an existing shelf to empty. The user is asked to check the username or collection visibility instead.
 
-- Treat a physical copy separately from the canonical game record.
-- Track status, edition/version, language, condition, completeness, notes, location, and last-updated date.
-- Import BGG's for-trade flag while preserving app-specific copy metadata.
-- Support bulk marking and bulk editing.
-- Export plain text, Markdown, and CSV with canonical BGG links.
-- Provide a shareable view only after privacy and access-control decisions are made.
+Full reconciliation may change BGG-sourced collection status, but it must never delete or overwrite app-owned copy prices, private notes, trade history, or other private CSV data.
 
-### 7.4 Wishlist/list matcher
+### Thing
 
-- Accept pasted lines, CSV, and BGG URLs/IDs.
-- Normalize whitespace and common annotations, then resolve exact BGG IDs first and names second.
-- Compare resolved BGG IDs—not titles—against the synced wishlist.
-- Show wishlist priority in the result.
-- Require confirmation for multiple editions, same-name games, expansions, or low-confidence fuzzy matches.
-- Allow export of matched, unmatched, and unresolved rows.
+Thing provides canonical metadata and community poll data.
 
-## 8. Recommendation model
+- At most 20 IDs are requested per Thing call.
+- Requests are paced conservatively.
+- Canonical game data is cached globally because the same BGG game can serve many users.
+- Exact-player-count vote counts are stored raw.
+- Categories and mechanics are normalized for later filtering and analysis.
 
-### 8.1 Signals
+### Search
 
-For a game `g` and exact player count `p`, retain the raw poll votes:
+Search is available for future live resolution of pasted names. Exact BGG IDs and URLs take precedence over title matching. Ambiguous names must require review rather than silent guessing.
 
-- `B(g,p)`: Best votes
-- `R(g,p)`: Recommended votes
-- `N(g,p)`: Not Recommended votes
-- `T(g,p) = B + R + N`: total votes
+### User and Plays
 
-Derive—but never substitute for the raw values:
+Public User data may later help validate connected usernames.
 
-- positive share: `(B + R) / T`
-- best share: `B / T`
-- negative share: `N / T`
-- confidence: a sample-size adjustment so a 90% result from 10 votes does not automatically outrank an 88% result from 1,000 votes
+BGG play history is not part of the MVP. It may become an optional recommendation signal for users who already record plays on BGG. BoardGameEngine will not require play logging or become another play tracker.
 
-### 8.2 Hard eligibility before ranking
+## 6. Data ownership
 
-A result must satisfy all active hard filters:
+The database distinguishes three kinds of information.
 
-1. It is in the selected collection pool.
-2. The exact player count is within the publisher-supported range.
-3. It fits the chosen weight and time ranges, if supplied.
-4. It is the desired item type and is not excluded by collection status.
+### BGG-sourced data
 
-The community poll then ranks eligible games. This avoids calling a technically unsupported count “recommended” merely because of a malformed or sparse poll.
+- canonical game identity and metadata;
+- public collection status;
+- exact-count community polls;
+- BGG categories and mechanics; and
+- freshness/synchronization timestamps.
 
-### 8.3 Policies to prototype
+### BoardGameEngine-derived data
 
-The default is intentionally undecided until it is tested against the owner's real collection. Prototype three transparent policies:
+- recommendation scores;
+- confidence/sample-size adjustments;
+- fit labels and warnings;
+- group-library availability; and
+- future coverage analysis.
 
-| Policy | Intent | Candidate behavior |
-|---|---|---|
-| Conservative | Avoid a disappointing table fit | Strongly penalize negative share and require a meaningful vote sample |
-| Balanced | Reward broad positive sentiment | Combine Best + Recommended, use Best as a tie-breaker, and adjust for sample size |
-| Exploratory | Show workable choices when the shelf is constrained | Keep all publisher-supported games but rank weak/divisive fits lower and label them |
+### User-owned application data
 
-A fourth “custom” policy can expose a maximum Not Recommended percentage, minimum positive percentage, and minimum vote count. The eventual default and thresholds are product decisions, not facts to assume from BGG.
+- private CSV fields;
+- copy-level acquisition costs;
+- private notes and locations;
+- trade ledger/history;
+- saved profiles and preferences; and
+- other app-only metadata.
 
-### 8.4 Explanation contract
+BGG synchronization may refresh BGG-sourced data. It must not overwrite user-owned application data.
 
-Each result should answer:
+## 7. Recommendation contract
+
+For game `g` at exact player count `p`, retain:
+
+- `B(g,p)`: Best votes;
+- `R(g,p)`: Recommended votes;
+- `N(g,p)`: Not Recommended votes; and
+- `T(g,p) = B + R + N`: total votes.
+
+Derived signals may include:
+
+- positive share: `(B + R) / T`;
+- best share: `B / T`;
+- negative share: `N / T`; and
+- a sample-size confidence adjustment.
+
+### Hard eligibility
+
+Before ranking, a candidate must:
+
+1. be owned in the selected library;
+2. support the requested player count within its published range;
+3. fit the requested time limit;
+4. fit the requested complexity range;
+5. have usable enriched BGG metadata and an exact-count poll; and
+6. satisfy collection-status choices such as the for-trade toggle.
+
+Unknown BGG values are not silently converted into favorable values. For example, BGG weight `0` is treated as missing rather than as an extremely light game.
+
+### Initial balanced ranking
+
+The current starting policy rewards broad positive sentiment, penalizes Not Recommended sentiment, and shrinks confidence for small samples. It is a **starting model, not gospel**.
+
+The production ranking must be calibrated against real `killjoy00` recommendations across varied table scenarios before adding multiple policy modes or a large set of tuning controls.
+
+### Explanation contract
+
+Every result should answer:
 
 - Why did this game qualify?
-- Why is it ranked above the next game?
-- How many people voted at this player count?
-- Is the result broadly positive, exceptionally “Best,” divisive, or low-confidence?
-- Which filters would have to relax to see more choices?
+- What is its exact-count Best / Recommended / Not Recommended distribution?
+- How many people voted?
+- Is the sample small or the result divisive?
+- What constraint could be relaxed to see more choices?
 
-## 9. Additional features worth considering (without play tracking)
+Raw BGG evidence remains visible. A BoardGameEngine score must never masquerade as a BGG rating.
 
-1. **Saved table profiles.** Save recurring contexts such as “four-player strategy night,” “two-player weeknight,” or “family afternoon,” including player count, weight, time, and strictness.
-2. **Combined group libraries.** Add friends' public BGG usernames, deduplicate games by BGG ID, show who owns each copy, and choose from everything physically available to the group.
-3. **Shareable shortlist and table vote.** Send the five candidates to attendees so they can rank, veto, or mark rules familiarity before the event; the host retains the final decision.
-4. **Collection coverage map.** Visualize where the collection is strong or thin across exact recommended player count, weight, and time—for example, “many heavy four-player choices, almost no reliable six-player games.” This uses catalog and poll data, not play history.
+## 8. Group libraries
 
-## 10. Proposed architecture (technology-neutral)
+After the single-user picker produces credible results, BoardGameEngine should support multiple public BGG collections in one table profile.
 
-```mermaid
-flowchart TD
-    UI[Mobile-friendly web UI] --> API[Application API]
-    API --> DB[(Application database)]
-    API --> MATCH[List matcher and exports]
-    SYNC[Sync worker] --> DB
-    SYNC --> BGG[BGG XML API2]
-    API --> SYNC
+The host can add the BGG usernames of people whose games may be available that night. Games are deduplicated by BGG ID while ownership remains visible.
+
+The product then answers the more useful real-world question:
+
+> **What can this group play from everything physically available to us?**
+
+This is expected to become a major differentiator.
+
+## 9. Saved table profiles
+
+After group libraries, users may save common contexts such as:
+
+- “Tuesday — four-player strategy night”;
+- “two-player weeknight”; or
+- “family afternoon.”
+
+A profile may retain participating collections, player count, time range, complexity range, recommendation policy, and optional exclusions.
+
+Profiles reduce setup friction; they do not alter BGG data.
+
+## 10. Existing Library Tools
+
+The pre-reboot work is not discarded. It becomes a secondary **Library Tools** area.
+
+Preserved capabilities include:
+
+- private BGG CSV import and reconciliation;
+- copy-level cost tracking and missing-price review;
+- private condition/location/notes;
+- auditable trade allocation and reversal;
+- Markdown/text/CSV trade exports;
+- invitations and account administration; and
+- local list matching.
+
+Private CSV remains useful because an application-level BGG token does not grant arbitrary access to a user's private BGG collection fields.
+
+No major new accounting or trade feature should outrank core recommendation work until usage demonstrates otherwise.
+
+## 11. Selected architecture
+
+The technology decision is complete.
+
+- **Runtime:** Cloudflare Workers
+- **Web/API framework:** Hono
+- **Database:** Cloudflare D1
+- **Authentication:** invitation-only email magic links through Resend
+- **Public product site:** GitHub Pages on the canonical domain
+- **BGG integration:** server-side XML API2 client with encrypted Worker token
+- **Deployment:** GitHub Actions, with TypeScript/Vitest checks before migration/deploy steps
+- **Backups:** scheduled private D1 export workflow
+
+Internal direction:
+
+```text
+BGG client
+  → XML parsers
+  → durable synchronization service
+  → normalized D1 cache
+  → recommendation service
+  → authenticated API
+  → picker-first web UI
 ```
 
-### Components
+The BGG client, synchronization API, recommendation API, and picker UI should remain separate boundaries instead of being folded back into the older monolithic application API.
 
-- **Web UI:** responsive picker, collection and cost dashboard, trade calculator/management, list import review, exports, and sync status.
-- **Application API:** invitation-based authentication, authorization, recommendation queries, cost-ledger operations, trade allocation, personal metadata, and export generation.
-- **BGG adapter and sync worker:** authenticated server-side calls, XML parsing, caching, backoff, batching, and full/incremental reconciliation.
-- **Database:** normalized game facts and poll observations plus user-owned settings and copy metadata.
-- **Matching pipeline:** line parsing, ID/URL extraction, exact search, fuzzy candidates, disambiguation, and wishlist comparison.
+## 12. Current implementation state
 
-### Selected foundation
+As of September 6, 2026:
 
-- **Runtime and hosting:** Cloudflare Workers, with the existing public site remaining on GitHub Pages until the application is ready to replace it.
-- **Database:** Cloudflare D1, accessed only by server-side Worker code.
-- **Authentication:** invitation-only email magic links sent through Resend from `login@boardgames.planitnow.us`.
-- **Magic-link safety:** opening a link only shows a confirmation screen. A separate POST consumes the token, preventing mail scanners or accidental clicks from invalidating it. Each email also includes a copyable URL and short code.
-- **Token lifetime:** 30 minutes. Store only hashes of login tokens, codes, and sessions.
-- **Invitation administration:** only the initial administrator, `killjoy00@yahoo.com`, may invite accounts in the first release.
-- **CSV import:** accept the BGG CSV through the authenticated website; blank `pricepaid` values become unknown-cost copies in the missing-cost queue. Treat purchase `pricepaid` as inclusive of purchase tax and shipping.
-- **Sessions:** keep active users signed in until they explicitly sign out. Refresh the persistent cookie on use and revoke the server-side session on sign-out.
-- **Invitation controls:** the administrator can send, resend, and revoke pending invitations; disable accounts; and view invitation and acceptance status.
-- **Private CSV fields:** import private comments, inventory locations, and related private metadata for the owning user. A blank or zero `quantity` creates no physical owned copy.
+- the BGG application token is stored in GitHub and deployed as an encrypted Cloudflare Worker secret;
+- live authenticated Collection, Thing, and Search calls have been validated successfully;
+- the live acceptance probe found **665 owned base games** for BGG user `killjoy00`;
+- the live API client uses Bearer authentication, bounded retries, conservative pacing, and max-20 Thing batches;
+- D1 stores linked source accounts, durable sync runs/items, canonical game freshness, exact-player-count polls, and category/mechanic tags;
+- collection reconciliation reuses the same collection IDs as private CSV imports so app-owned copy records survive sync;
+- `/app` is now a picker-first Connect → Sync → Pick experience;
+- the live picker queries cached server-side collection data rather than accepting candidate games from the browser;
+- the required linked Powered by BGG attribution is present on the API-backed experience; and
+- the existing Library Tools remain available separately.
 
-### Initial domain model
+The next acceptance milestone is an authenticated `killjoy00` full sync through the product UI followed by manual review of real recommendation shortlists.
 
-- `AppUser`: invited application user, access state, role, and linked source account
-- `SourceAccount`: BGG username and sync state
-- `Game`: canonical BGG identity and stable catalog fields
-- `GamePollSnapshot`: raw player-count votes and fetch timestamp
-- `CollectionItem`: BGG status flags, wishlist priority, personal rating, and version reference
-- `Copy`: user-managed edition, condition, language, completeness, location, notes, trade status, and current acquisition-cost state
-- `AcquisitionTransaction`: direct purchase, gift, trade allocation, or correction with currency and source details
-- `Trade`: outgoing and incoming copy lines, shipping/additional cash, allocation method, status, and audit history
-- `TradeAllocation`: the immutable calculated amount assigned to each received copy
-- `SavedProfile`: reusable picker filters and recommendation policy
-- `ImportedList` / `ImportedRow`: original input, normalized input, resolution state, and selected BGG ID
-- `SyncRun`: request counts, retries, outcome, and freshness
+## 13. Delivery sequence
 
-Technology selection is deferred to a short architecture spike. Selection criteria should include mobile ergonomics, a server-side secret boundary, durable scheduled/background work, relational queries, easy XML fixture testing, simple deployment, and low maintenance for a small project.
+### Phase 0 — Live API proof — complete
 
-## 11. Delivery plan
+- validate approved Bearer token;
+- exercise Collection, Thing, and Search;
+- confirm pacing and 20-ID Thing batching;
+- capture normalized live evidence without exposing the token.
 
-### Milestone 0 — Feasibility and decisions
+### Phase 1 — Real single-user product — in progress
 
-**Work**
+- run the first full authenticated `killjoy00` product sync;
+- compare synced collection identity/status with existing CSV-derived records;
+- review several real picker scenarios;
+- calibrate recommendation policy against those results;
+- improve sync/error UX where real use exposes friction;
+- add browser-level acceptance coverage once a suitable authenticated test account is available.
 
-- Register a non-commercial BGG application for the invitation-only, non-monetized product and request approval.
-- Publish the public product, privacy, and terms pages before registration so BGG can review a live application website.
-- Use BGG username `killjoy00` for discovery and acceptance testing; confirm which collection fields are public.
-- Inspect a private `killjoy00` collection CSV locally, document its column mapping with a sanitized fixture, and never commit the original export or its pricing data.
-- Capture representative Collection, Thing, Search, and queued `202` responses as sanitized fixtures.
-- Validate the player-count poll structure, vote counts, expansion relationships, edition/version data, and API error behavior.
-- Run the three scoring policies across a meaningful sample from the real collection.
-- Define the invited-user account and invite-administration model.
-- Define the copy-level cost vocabulary, supported currency behavior, and trade-allocation defaults.
-- Decide the recommendation default and remaining product behaviors.
+### Phase 2 — Group game night
 
-**Exit criteria**
+- add multiple public BGG usernames to a table/library context;
+- deduplicate by BGG ID while showing owners;
+- recommend from the combined physically available shelf;
+- add saved table profiles.
 
-- BGG access and license posture are viable.
-- The approved license permits the planned non-commercial invitation-only use.
-- The exact fields required for the MVP have test fixtures.
-- A scoring approach produces credible five-game shortlists for several table scenarios.
-- Open product decisions below have owners or explicit deferrals.
+### Phase 3 — Discovery helpers
 
-### Milestone 1 — Read-only collection MVP
+- upgrade the list matcher through live BGG Search;
+- compare resolved IDs against synced wishlists;
+- validate shareable shortlists and optional group voting.
 
-**Work**
+### Phase 4 — Reassess Library Tools
 
-- Implement BGG adapter, XML parsing, throttled sync, cache, retries, and full reconciliation.
-- Implement invitation-only authentication and admin-controlled invite access.
-- Build normalized game, poll, collection, and sync-run storage.
-- Build the mobile-first picker and transparent result explanations.
-- Add freshness/error states and BGG attribution.
-- Add contract tests against fixtures and scoring tests for edge cases.
+Measure whether cost tracking, trade accounting, and exports are actually being used. Invest, simplify, or stop based on observed value rather than sunk-cost momentum.
 
-**Exit criteria**
+## 14. Success criteria
 
-- A synced collection can answer player-count + weight + time queries reliably.
-- Results remain reproducible for the same data and policy.
-- Sparse polls, missing weights/times, expansions, and fewer-than-five results are handled explicitly.
+BoardGameEngine is succeeding when a collector with a large BGG shelf can:
 
-### Milestone 2 — Library costs, trade inventory, and exports
+1. connect a username;
+2. synchronize the shelf without managing API details;
+3. describe tonight's table in seconds;
+4. receive a trustworthy shortlist immediately from cached data; and
+5. understand the evidence behind every recommendation.
 
-**Work**
+A large collection should make the product more useful, not more cumbersome.
 
-- Add copy-specific fields, acquisition transactions, cost-status filtering, bulk price entry, and privacy controls.
-- Add the cost dashboard: missing-price queue, priced-copy coverage, known current-collection total, and cost ranking.
-- Add trade transactions, calculation preview, equal/manual/relative-value allocations, cent reconciliation, confirmation, and correction history.
-- Add BGG for-trade reconciliation without overwriting app-owned cost data.
-- Add text, Markdown, and CSV export templates with stable BGG links.
-- Add calculation and export tests for unknown/zero costs, rounding, incomplete trades, escaping, missing edition data, and multiple copies.
+The product must remain useful without entering prices, trades, private notes, or play logs.
 
-**Exit criteria**
+## 15. Non-goals
 
-- The dashboard clearly separates unknown costs from zero-cost acquisitions and never labels a partial sum as complete.
-- Cost allocations always equal the confirmed trade cost pool to the cent and remain auditable.
-- The owner can update and export the entire current trade list without manual reformatting.
-- Re-syncing from BGG does not overwrite app-owned notes or copy metadata.
+BoardGameEngine will not:
 
-### Milestone 3 — Wishlist/list matcher
+- replace BGG as a canonical database or collection editor;
+- become a marketplace, store, payment service, or general social network;
+- require BoardGameEngine play logging;
+- scrape BGG pages or depend on unsupported private JSON endpoints;
+- send the BGG application token to the browser;
+- train an AI/LLM on BGG data; or
+- monetize BGG-derived functionality without first resolving BGG's applicable commercial-license requirements.
 
-**Work**
+## 16. Compliance and operations
 
-- Parse pasted text, BGG links/IDs, and CSV.
-- Resolve exact matches, rank candidate matches, and build the ambiguity-review UI.
-- Compare by BGG ID to wishlist and priority; export results.
+- Keep the BGG application token server-side and encrypted.
+- Cache BGG data and minimize request volume.
+- Pace requests conservatively and batch Thing IDs at 20 or fewer.
+- Preserve the last usable cached data through temporary BGG failures.
+- Include a legible linked **Powered by BGG** logo on public-facing BGG-powered experiences.
+- Treat BGG policy/API changes as an operational risk and keep the adapter boundary testable.
+- Keep the initial product non-commercial unless licensing is explicitly revisited.
 
-**Exit criteria**
+Official references:
 
-- Exact identifiers are deterministic.
-- Ambiguous names are never silently accepted.
-- The user can correct a match and retain that resolution within the imported list.
+- [Using the XML API](https://boardgamegeek.com/using_the_xml_api)
+- [BGG XML API2](https://boardgamegeek.com/wiki/page/BGG_XML_API2)
+- [XML API Terms of Use](https://boardgamegeek.com/wiki/page/XML_API_Terms_of_Use)
 
-### Milestone 4 — Selected enhancements and hardening
+## 17. Confirmed product decisions
 
-- Validate and prioritize saved profiles, combined collections, table voting, and the collection coverage map.
-- Add accessibility, privacy/export/delete controls, observability, sync administration, and deployment runbooks.
-- Consider installable PWA/offline read support only after the core online flows are stable.
+1. The picker is the product; collection accounting is secondary.
+2. BGG is canonical for BGG-sourced identity/community/collection data.
+3. BoardGameEngine preserves app-owned private/copy data across BGG syncs.
+4. The initial recommendation personality is Balanced and must be calibrated against real results.
+5. Games marked for trade are excluded by default, with an explicit include toggle.
+6. Group libraries are the next major capability after the single-user picker is validated.
+7. Play history is optional later; BoardGameEngine will not require play logging.
+8. The initial release remains invitation-only and non-commercial.
+9. Existing cost/trade tooling stays available but does not drive the roadmap.
 
-## 12. Testing strategy
+## 18. Immediate definition of done
 
-- **Contract fixtures:** sanitized official API payloads for normal, missing, queued, throttled, and malformed cases.
-- **Parser tests:** collection status flags, expansions, version fields, polls, missing statistics, and HTML/XML entities.
-- **Recommendation tests:** exact-count eligibility, hard-filter integrity, small samples, ties, divisive polls, missing polls, and deterministic ordering.
-- **Cost-ledger tests:** unknown versus zero, multiple copies, current-collection totals, coverage, ranking, trade reversals, partial-cost warnings, and currencies.
-- **Allocation tests:** one-to-one and many-to-many trades, equal/manual/relative weights, shipping and cash additions, deterministic cent rounding, and exact reconciliation.
-- **Matcher tests:** BGG URLs, numeric IDs, punctuation, alternate titles, duplicate names, editions, expansions, and intentionally unresolved rows.
-- **Export snapshots:** plain text, Markdown, and CSV escaping across multiple copies and incomplete metadata.
-- **End-to-end scenarios:** sync → pick five; fill missing costs → verify total; record trade → allocate costs; update copies → export; paste list → review → wishlist matches.
+The reboot's first real product milestone is complete when `killjoy00` can sign in, complete a full live collection sync, enter several real table configurations, and receive credible five-game recommendations generated entirely from synchronized cached data.
 
-## 13. Major risks and mitigations
-
-| Risk | Impact | Mitigation / decision gate |
-|---|---|---|
-| BGG non-commercial application approval denied | Blocks the API-backed product | Apply during Milestone 0 with the accurate invitation-only, no-ad scope; do not build on private APIs |
-| API throttling, instability, or schema changes | Slow/broken sync | Server-side cache, batching, bounded retries, fixtures, adapter boundary, freshness UI |
-| Incremental sync misses deletions | Stale collection | Scheduled full reconciliation plus on-demand refresh |
-| Polls are sparse or biased | False precision | Show sample size and raw distribution; confidence adjustment; configurable policy |
-| Weight conflates rules load and strategic depth | Poor “medium-heavy” fit for some users | Treat weight as a coarse filter; later add manual teach/brain-burn tags |
-| Titles and editions are ambiguous | Incorrect wishlist matches | Prefer IDs/URLs, show candidates, and require confirmation |
-| BGG and app statuses conflict | User loses trust or notes | Define field ownership; never overwrite app-owned copy data during sync |
-| “Price paid” and allocated trade cost are conflated | Misleading totals | Store direct price and allocated acquisition cost with provenance; label current-collection cost and coverage explicitly |
-| Outgoing trade costs are missing | Incoming allocations appear complete when they are not | Block or explicitly label partial allocation; require confirmation of the warning |
-| Multiple currencies are mixed | Invalid totals and rankings | Choose a base-currency policy before implementation; never sum currencies without an explicit conversion rule |
-| Allocation rounding loses or creates pennies | Ledger does not reconcile | Use integer minor units and a deterministic remainder rule; assert exact reconciliation in tests |
-| Scope expands into another BGG clone | Delayed useful release | Keep MVP centered on collection sync + picker; gate additional features by validation |
-
-## 14. Product decisions
-
-### Confirmed
-
-1. Use BGG username `killjoy00` for discovery and acceptance testing.
-2. Make the first release an invitation-only multi-user application, not an open public signup.
-3. Keep the initial product non-commercial and forgo the Google AdSense banner. Any future monetization requires a new BGG licensing decision.
-4. Manage acquisition costs at the physical-copy level, flag missing costs, show known current-collection cost and coverage, rank copies by cost, and allocate outgoing costs plus shipping to games received in trades.
-5. Keep the first-release ledger currency-agnostic while assuming each user uses one consistent currency; keep unknown cost distinct from an explicit zero-cost gift.
-6. Store direct item price and shipping separately while presenting their combined acquisition cost.
-7. Default trade allocation to an equal split, with editable percentages or values available before saving.
-8. Treat the private BGG CSV as user-supplied import data. Keep the original export and pricing details out of source control; commit only sanitized fixtures.
-
-### Still open—do not assume
-
-1. Which authentication and invitation mechanism should the app use, and should app-specific data sync across devices?
-2. For the default recommendation policy, should avoiding negative sentiment matter more than maximizing Best votes, or should the app begin balanced and let the user choose?
-3. When a game is marked for trade, should the picker exclude it by default, include it with a badge, or use a saved preference?
-4. Which one-click trade output matters most first: forum-ready Markdown, plain text for messages, CSV, a public link, or a BGG GeekList-compatible workflow?
-5. Should the wishlist matcher compare only base-game identity at first, or must it distinguish editions, expansions, and language from day one?
-6. Are friends' collections part of the intended early use, or a later enhancement?
-7. Should direct-purchase tax be stored separately from item price, like shipping, or included in item price?
-8. When importing a CSV row with a blank price, should the first release create an unknown-cost copy automatically or require confirmation during import review?
-
-## 15. Immediate next actions
-
-1. Deploy the public site and verify its product, privacy, and terms URLs, then submit the BGG application registration as **Non-commercial**, describing the invited-user, no-ad product; approval may take time.
-2. Inspect the private `killjoy00` CSV without committing it, document its fields, and create a minimal sanitized CSV fixture for import development.
-3. After BGG access is approved, use `killjoy00` to capture sanitized API fixtures and validate the data model.
-4. Decide the invite/authentication approach; create Milestone 0 issues for API fixtures, CSV field mapping, scoring experiments, account model, licensing/attribution, and cost-ledger design.
-5. Test the three ranking policies against several real scenarios (for example 2, 4, and 6 players across light, medium, and heavy ranges).
-6. Review the resulting five-game lists manually before selecting the application stack or building authenticated features.
-
-## 16. Sources
-
-- [Motivating r/boardgames discussion](https://www.reddit.com/r/boardgames/comments/1qo0xax/an_issue_i_have_with_bgg_recommended_player_counts/)
-- [BGG XML API2 documentation](https://boardgamegeek.com/wiki/page/BGG_XML_API2)
-- [Using the BGG XML API: registration, tokens, limits, and public apps](https://boardgamegeek.com/using_the_xml_api)
-- [BGG XML API Terms of Use](https://boardgamegeek.com/wiki/page/XML_API_Terms_of_Use)
-- [BGG XML API commercial-use guidance](https://boardgamegeek.com/wiki/page/BGG_XML_API_Commercial_Use)
-- [BGG JSON API warning](https://boardgamegeek.com/wiki/page/BGG_JSON_API)
+The results must then be reviewed manually before the recommendation model is treated as settled.
