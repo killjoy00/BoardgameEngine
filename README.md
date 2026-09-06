@@ -1,29 +1,72 @@
 # BoardGameEngine
 
-BoardGameEngine is a collection-first web app for answering a practical question: **what should this group play right now?**
+BoardGameEngine answers one practical question: **given the people at the table and the games actually available to us, what should we play?**
 
-The initial product will use a BoardGameGeek collection as its source catalog, then improve on printed player ranges by ranking games against the full community vote at the exact table size. It will also make for-trade inventory easier to maintain and export, and compare pasted game lists against a wishlist.
+It connects to a public BoardGameGeek collection, caches canonical game data and exact-player-count community polls, then ranks owned games against the table's player count, time, and desired complexity. Every recommendation keeps the underlying Best / Recommended / Not Recommended evidence visible.
 
 ## Project status
 
-Early development. The repository includes a responsive static product site suitable for BGG application review and initial deployment. The first release is intended to be invitation-only, with BGG user `killjoy00` as the discovery and acceptance-test account. The initial product will be non-commercial; advertising is out of scope.
+Active invitation-only development. The BoardGameGeek application is approved and the Bearer token is deployed only as an encrypted server-side secret.
 
-## Run the public site
+The live integration has successfully validated authenticated Collection, Thing, and Search calls. The acceptance account (`killjoy00`) currently returns 665 owned base games from BGG. The authenticated application now opens on a picker-first **Tonight** experience rather than the older collection-accounting workspace.
 
-The public site has no build-time dependencies and can be deployed directly to any static host. Run `npm start`, open [http://localhost:3000](http://localhost:3000), and use `npm run check` for source checks.
+The current milestone is a full authenticated product sync followed by manual review and calibration of real recommendation shortlists.
 
-The authenticated Cloudflare application lives in `app/`. Run `cd app`, `npm ci`, `npx wrangler d1 migrations apply DB --local`, and `npm run dev` for local development; use `npm run check` for its TypeScript and unit-test suite. See the [feature status](docs/FEATURES.md), [delivery TODO](docs/TODO.md), and [pre-BGG release notes](docs/PRE_BGG_RELEASE.md) for the work available before live API access.
+## Product hierarchy
 
-## Core jobs
+The core product is:
 
-- Enter a player count plus optional weight and time constraints; receive five owned-game recommendations with understandable reasons.
-- Track copy-level acquisition costs, identify missing prices, total the known investment in the current collection, and rank copies by cost.
-- Record a trade and allocate outgoing-game costs plus shipping across the games received.
-- Track copies offered for trade, including condition and edition notes, and export a clean shareable list in one click.
-- Paste game names or BoardGameGeek links and find confirmed or possible matches on the user's wishlist.
+1. connect a public BGG username;
+2. synchronize and cache the available shelf;
+3. describe tonight's table; and
+4. receive up to five explainable owned-game recommendations.
 
-Play logging is deliberately outside the current scope.
+Existing cost tracking, private CSV import, trade accounting, exports, matcher, and administration remain available under **Library tools**. They are useful secondary capabilities, not the roadmap driver.
+
+Group libraries—combining the public collections of everyone at the table—are the next major capability after the single-user picker is validated.
+
+Play logging is deliberately outside the core product.
+
+## Architecture
+
+The authenticated application lives in `app/` and uses:
+
+- Cloudflare Workers + Hono;
+- Cloudflare D1;
+- Resend invitation/magic-link authentication;
+- a server-side BoardGameGeek XML API2 client;
+- durable chunked BGG synchronization;
+- cached raw exact-player-count poll data; and
+- GitHub Actions deployment with TypeScript/Vitest checks before migrations and deploys.
+
+The BGG application token never enters browser code.
+
+## Local development
+
+The public product site has no build-time dependencies:
+
+```bash
+npm start
+npm run check
+```
+
+For the authenticated application:
+
+```bash
+cd app
+npm ci
+npx wrangler d1 migrations apply DB --local
+npm run dev
+npm run check
+```
+
+A local BGG token is required only for live API calls; normal parser/domain tests use fixtures and mocks.
 
 ## Start here
 
-Read the [project charter and delivery plan](docs/PROJECT_CHARTER.md). It records the product scope, BoardGameGeek data findings, proposed recommendation model, phased roadmap, risks, and decisions still to make.
+- [Project charter](docs/PROJECT_CHARTER.md) — current product thesis, architecture, data ownership, recommendation contract, roadmap, and confirmed decisions.
+- [Feature status](docs/FEATURES.md) — what is implemented now.
+- [Delivery TODO](docs/TODO.md) — next acceptance and product work.
+- [Operations](docs/OPERATIONS.md) — deploy/restore/incident guidance.
+
+BoardGameGeek remains the source for BGG-derived data. Public-facing API-backed experiences include the required linked Powered by BGG attribution.

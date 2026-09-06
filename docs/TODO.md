@@ -1,47 +1,80 @@
 # Delivery TODO
 
-## PR #15 review and polish
+## Current acceptance milestone — single-user live picker
 
-- [ ] Product-review every authenticated route on desktop and mobile before merge.
-- [ ] Import the real private CSV through a review deployment and verify counts, totals, private fields, and the assumption that copies appear as separate rows.
-- [ ] Review any changed-cost warning; never replace an application cost until the owner selects **Use imported**.
-- [ ] Review any missing-copy warning; never change ownership until the owner selects **Mark no longer owned**.
-- [ ] Confirm the searchable trade selection, incoming-game cards, allocation confirmation, BGG-ID requirement, reversal, and Markdown-first export with real examples.
-- [ ] Confirm administrator invitation send, resend, revoke, disable, re-enable, and acceptance flows.
-- [ ] Keep the fixture picker visible and unmistakably labeled as sample data.
-- [ ] Run accessibility, responsive, privacy, authorization, and destructive-action checks.
-- [ ] Merge PR #15 only after explicit owner approval; the main workflow will then apply migration `0002_collection.sql`.
+- [x] Store the approved BGG application token only as GitHub/Cloudflare encrypted secrets.
+- [x] Validate authenticated live Collection, Thing, and Search requests.
+- [x] Use conservative request pacing and 20-ID Thing batches.
+- [x] Persist linked BGG accounts, durable sync runs/items, game freshness, raw player-count polls, categories, and mechanics.
+- [x] Reconcile BGG collection rows onto the same collection-item IDs used by private CSV import.
+- [x] Keep collection/source titles separate from canonical Thing titles.
+- [x] Refuse an unexpected empty Collection result before it can reconcile an existing shelf to empty.
+- [x] Replace the fixture-first `/app` landing page with Connect → Sync → Pick.
+- [x] Make recommendations from server-side cached owned games rather than browser-supplied candidates.
+- [x] Show Best / Recommended / Not Recommended evidence and vote sample size on each result.
+- [x] Exclude for-trade games by default with an explicit include toggle.
+- [x] Add linked Powered by BGG attribution to the API-backed experience.
+- [ ] Sign in as the acceptance user and complete the first full `killjoy00` product sync.
+- [ ] Compare synced ownership/status against the existing CSV-backed collection without overwriting private copy fields.
+- [ ] Manually review real recommendation results for at least 2-, 3-, 4-, 5-, and 6-player tables across light, medium, and heavy settings.
+- [ ] Record obviously good/bad rankings and calibrate the Balanced recommendation formula against them.
+- [ ] Decide how exact-count polls such as `6+` should behave when a requested high player count has no literal numeric poll row.
+- [ ] Review sync UX on mobile during the first ~665-game enrichment run and fix any friction.
 
-## Immediately after BGG approval
+## Reliability and acceptance testing
 
-- [ ] Store the Bearer token as an encrypted GitHub and Cloudflare Worker secret; never commit or log it.
-- [ ] Record approval conditions, license terms, rate limits, and attribution requirements.
-- [ ] Capture and sanitize real XML fixtures before enabling live synchronization.
-- [ ] Implement Collection, Thing, and Search transports behind the tested adapter boundary.
-- [ ] Run an initial `killjoy00` sync and compare it with the CSV import without overwriting app-owned fields.
-- [ ] Validate exact player-count polls and select the final recommendation thresholds/policy using real games.
-- [ ] Enable scheduled full reconciliation plus bounded incremental refresh.
-- [ ] Replace fixture recommendations and local-only matching with live BGG-enriched behavior.
+- [x] Parser/domain/unit coverage for BGG auth header, Collection/Thing/Search parsing, batching, pacing, recommendation scoring, and sync identity helpers.
+- [x] Compile-test the emitted picker-first browser JavaScript.
+- [x] Keep destructive BGG reconciliation separated from app-owned copy metadata.
+- [x] Maintain same-origin enforcement, browser security headers, output escaping, and magic-link rate limiting.
+- [x] Maintain scheduled private D1 exports and documented restore/incident procedures.
+- [ ] Complete and record a production restore drill.
+- [ ] Add authenticated browser-level end-to-end coverage for Connect → Sync → Pick once a dedicated non-production account/inbox is available.
+- [ ] Add structured redacted sync telemetry: duration, requests, retries, missing Thing IDs, and failure categories without logging private fields or tokens.
+- [ ] Add periodic full BGG reconciliation after first-sync behavior is proven.
+- [ ] Decide whether incremental Collection refresh adds enough value versus simpler periodic full refreshes at the current user scale.
 
-## Later hardening
+## Recommendation work after first real sync
 
-- [x] Add account data export and confirmed deletion for non-administrator accounts.
-- [x] Add a recent non-sensitive audit view and event trail for imports, invitations, trades, reversals, and exports.
-- [x] Add magic-link rate limiting, expired-token cleanup, security headers, same-origin enforcement, and output escaping.
-- [ ] Add backup/restore drills, structured redacted operational logs, and operational runbooks.
-- [ ] Add browser-level end-to-end tests for imports, invitations, costs, trades, exports, matching, and recommendations.
+- [ ] Calibrate sample-size confidence from real results rather than assuming 50 votes is the final saturation point.
+- [ ] Test alternative downside penalties while always keeping raw poll values visible.
+- [ ] Improve fewer-than-five relaxation suggestions so they identify which constraint actually excludes the most candidates.
+- [ ] Decide treatment of missing play time, missing weight, and missing exact-count poll values; never silently impute favorable data.
+- [ ] Add saved table profiles only after the basic table controls prove sufficient.
+- [ ] Add collection coverage analysis only after recommendation filters/policies stabilize.
 
-## Collection workspace release
+## Next major product capability — group libraries
 
-- [x] Add a searchable, filterable, sortable library and in-place copy editor.
-- [x] Add import history reports alongside changed-cost, missing-copy, and quantity reconciliation.
-- [x] Add trade metadata, history, detail, and reversal controls.
-- [x] Add scheduled D1 exports and a restore/incident runbook.
-- [ ] Complete a production restore drill and record the result.
-- [ ] Add authenticated browser automation once a dedicated non-production test account and inbox are available.
+- [ ] Model multiple public BGG source accounts participating in a table profile without conflating them with the signed-in user's private collection metadata.
+- [ ] Deduplicate available games by BGG ID while retaining all owners.
+- [ ] Show who owns each recommended game.
+- [ ] Allow a host to temporarily include/exclude a participant's shelf for a game night.
+- [ ] Run the same explainable picker against the combined available library.
+- [ ] Add saved recurring groups/profiles after the one-off group flow is proven.
 
-## Real CSV acceptance finding
+## Discovery helpers
 
-- [x] Treat a BGG row with `own=1` and blank quantity as one physical copy.
-- [x] Process large CSV confirmations in bounded chunks with visible progress and errors.
-- [ ] Reimport the owner's CSV and verify copy count, known total, price coverage, private fields, and missing-price queue.
+- [ ] Upgrade the list matcher from local-only matching to BGG Search for unresolved names.
+- [ ] Prefer exact BGG IDs/URLs and require manual review for ambiguity.
+- [ ] Compare resolved IDs against the synced wishlist and wishlist priority.
+- [ ] Validate a shareable five-game shortlist/table-vote flow after group libraries.
+
+## Library Tools — preserve, do not lead roadmap
+
+- [x] Private BGG CSV upload, quoted-field parsing, review, confirmed import, and chunked large-import processing.
+- [x] Searchable/filterable/sortable library with in-place private copy editing.
+- [x] Missing-price, changed-cost, missing-copy, and import-history review workflows.
+- [x] Copy-level acquisition costs and current known-cost coverage.
+- [x] Trade allocation, history, detail, reversal, and Markdown/text/CSV exports.
+- [x] Invitations, account data export/deletion, audit events, and security hardening.
+- [ ] Reimport the owner's private CSV once more after live BGG sync and verify copy count, known total, price coverage, private fields, and review queues remain unchanged.
+- [ ] Product-review whether these tools are actually used before adding significant new accounting/trade scope.
+
+## Deliberately deferred
+
+- BoardGameEngine-native play logging.
+- Marketplace/payments/shipping.
+- Public social-network features.
+- Advertising or payments unless BGG commercial licensing is explicitly revisited first.
+- Any unsupported/private BGG JSON endpoints or page scraping.
+- AI/LLM training on BGG data.
