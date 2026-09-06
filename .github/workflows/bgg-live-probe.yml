@@ -3,7 +3,7 @@ name: Validate live BGG API
 on:
   workflow_dispatch:
   push:
-    branches: ["feat/live-bgg-sync"]
+    branches: ["main", "feat/live-bgg-sync"]
     paths:
       - "app/src/bgg.ts"
       - "app/test/bgg.test.ts"
