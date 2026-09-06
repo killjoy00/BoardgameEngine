@@ -23,7 +23,7 @@ app.use("*", async (context, next) => {
   context.header("X-Frame-Options", "DENY");
   context.header("Referrer-Policy", "strict-origin-when-cross-origin");
   context.header("Permissions-Policy", "camera=(), microphone=(), geolocation=(), payment=()");
-  context.header("Content-Security-Policy", "default-src 'self'; img-src 'self' data: https://raw.githubusercontent.com; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'");
+  context.header("Content-Security-Policy", "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'");
 });
 app.route("/api/bgg",bggApi);
 app.route("/api/picker",pickerApi);
