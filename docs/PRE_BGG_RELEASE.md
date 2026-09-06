@@ -1,21 +1,26 @@
-# Pre-BGG release
+# Pre-BGG release — archived
 
-This release deliberately delivers useful collection management before live BGG API approval.
+This document described the temporary collection-management release built while BoardGameGeek application approval was still pending.
 
-## Included
+That gate has passed. The approved application token is deployed as an encrypted server-side secret, authenticated Collection/Thing/Search access has been validated, persistent BGG synchronization is implemented, and the authenticated application now opens on a live picker-first experience.
 
-- Authenticated CSV upload, quoted-field parsing, private preview, quantity resolution, and confirmed import.
-- Copy-level collection storage, reimport removal review, real dashboard totals, and a missing-price queue.
-- Invitation administration with send, resend, revoke, disable, and acceptance state.
-- Auditable trade records, deterministic weighted cent allocation, reversible ownership changes, and Markdown, text, and CSV trade exports.
-- A server-only BGG adapter boundary with XML fixtures, 20-item batching, and bounded queued/error retries.
-- Deterministic fixture-driven recommendation ranking with visible sentiment, vote count, time, and exact player count.
-- Pasted name, BGG ID, and BGG URL matching against locally imported games.
+The pre-approval release remains historically useful because it established:
 
-## Waiting for approval
+- authenticated private BGG CSV upload and reconciliation;
+- copy-level collection/cost storage;
+- invitation administration;
+- auditable trade records and exports;
+- the initial BGG parser/batching test boundary; and
+- security/privacy hardening.
 
-The live Collection, Thing, and Search transports remain disabled until BGG supplies the approved Bearer token. The token will be stored only as a Cloudflare Worker secret. Live integration must not replace the fixture transport until contract fixtures have been captured and reviewed.
+Those capabilities are preserved as secondary **Library tools**. They no longer define the primary product roadmap.
 
-## Privacy boundary
+For current direction, use:
 
-Uploaded CSV contents are parsed on the authenticated request, previewed only to the owner, and normalized into D1 after confirmation. The original upload is not stored. Private comments, locations, acquisition sources, and prices must never be written to application logs.
+- [PROJECT_CHARTER.md](PROJECT_CHARTER.md) — active product charter;
+- [FEATURES.md](FEATURES.md) — current implemented feature state; and
+- [TODO.md](TODO.md) — current delivery priorities.
+
+## Privacy boundary retained from the pre-approval release
+
+Uploaded private CSV contents are parsed on the authenticated request and normalized into D1 only after confirmation. The original upload is not retained. Private comments, locations, acquisition sources, and prices must not be written to application logs or overwritten by public BGG synchronization.
