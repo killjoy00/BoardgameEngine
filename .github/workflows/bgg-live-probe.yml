@@ -1,0 +1,42 @@
+name: Validate live BGG API
+
+on:
+  workflow_dispatch:
+  push:
+    branches: ["feat/live-bgg-sync"]
+    paths:
+      - "app/src/bgg.ts"
+      - "app/test/bgg.test.ts"
+      - "app/scripts/probe-bgg.mjs"
+      - ".github/workflows/bgg-live-probe.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    env:
+      BGG_API_TOKEN: ${{ secrets.BGG_API_TOKEN }}
+      BGG_USERNAME: killjoy00
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+      - run: npm ci
+      - run: npm run check
+      - name: Probe authenticated BGG endpoints
+        run: node scripts/probe-bgg.mjs
+      - name: Upload sanitized probe summary
+        uses: actions/upload-artifact@v4
+        with:
+          name: bgg-live-probe
+          path: app/bgg-probe.json
+          if-no-files-found: error
+          retention-days: 7
