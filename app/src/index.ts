@@ -4,8 +4,9 @@ import { expiresIn, hash, isEmail, LOGIN_TOKEN_MINUTES, normalizeEmail, randomCo
 import { sendSignInEmail } from "./email";
 import { appPage, confirmPage, signInPage, type AppUser } from "./ui";
 import api from "./api";
+import bggApi from "./bgg-api";
 
-type Bindings = { DB: D1Database; EMAIL_FROM: string; RESEND_API_KEY: string };
+type Bindings = { DB: D1Database; EMAIL_FROM: string; RESEND_API_KEY: string; BGG_API_TOKEN: string };
 type User = { id: string; email: string };
 type AppContext = Context<{ Bindings: Bindings }>;
 const app = new Hono<{ Bindings: Bindings }>();
@@ -22,6 +23,7 @@ app.use("*", async (context, next) => {
   context.header("Permissions-Policy", "camera=(), microphone=(), geolocation=(), payment=()");
   context.header("Content-Security-Policy", "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'");
 });
+app.route("/api/bgg",bggApi);
 app.route("/api",api);
 
 app.get("/api/health", (context) => context.json({ ok: true }));
