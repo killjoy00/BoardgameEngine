@@ -3,8 +3,10 @@ import { getCookie, setCookie } from "hono/cookie";
 import { expiresIn, hash, isEmail, LOGIN_TOKEN_MINUTES, normalizeEmail, randomCode, randomToken } from "./auth";
 import { sendSignInEmail } from "./email";
 import { appPage, confirmPage, signInPage, type AppUser } from "./ui";
+import { rebootPage } from "./reboot-ui";
 import api from "./api";
 import bggApi from "./bgg-api";
+import pickerApi from "./picker-api";
 
 type Bindings = { DB: D1Database; EMAIL_FROM: string; RESEND_API_KEY: string; BGG_API_TOKEN: string };
 type User = { id: string; email: string };
@@ -21,16 +23,17 @@ app.use("*", async (context, next) => {
   context.header("X-Frame-Options", "DENY");
   context.header("Referrer-Policy", "strict-origin-when-cross-origin");
   context.header("Permissions-Policy", "camera=(), microphone=(), geolocation=(), payment=()");
-  context.header("Content-Security-Policy", "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'");
+  context.header("Content-Security-Policy", "default-src 'self'; img-src 'self' data: https://raw.githubusercontent.com; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'");
 });
 app.route("/api/bgg",bggApi);
+app.route("/api/picker",pickerApi);
 app.route("/api",api);
 
 app.get("/api/health", (context) => context.json({ ok: true }));
 app.get("/", async c => (await currentUser(c)) ? c.redirect("/app") : c.html(signInPage()));
 app.get("/sign-in", async c => (await currentUser(c)) ? c.redirect("/app") : c.html(signInPage()));
-app.get("/app", c => protectedApp(c,"library"));
-app.get("/app/:section", c => protectedApp(c,c.req.param("section")));
+app.get("/app", c => protectedHome(c));
+app.get("/app/:section", c => c.req.param("section")==="picker"?protectedHome(c):protectedApp(c,c.req.param("section")));
 
 app.post("/auth/request", async (context) => {
   const body = await context.req.parseBody();
@@ -117,7 +120,8 @@ async function consumeToken(context: AppContext, column: "token_hash" | "code_ha
   return context.redirect("/app");
 }
 
-async function protectedApp(c:AppContext,section:string){const user=await currentUser(c);if(!user)return c.redirect("/sign-in");const allowed=["library","missing-prices","import","trades","picker","matcher","account"];if(section==="invitations"&&user.role==="admin")return c.html(appPage(user,section));return c.html(appPage(user,allowed.includes(section)?section:"library"))}
+async function protectedHome(c:AppContext){const user=await currentUser(c);if(!user)return c.redirect("/sign-in");return c.html(rebootPage(user))}
+async function protectedApp(c:AppContext,section:string){const user=await currentUser(c);if(!user)return c.redirect("/sign-in");const allowed=["library","missing-prices","import","trades","matcher","account"];if(section==="invitations"&&user.role==="admin")return c.html(appPage(user,section));return c.html(appPage(user,allowed.includes(section)?section:"library"))}
 async function currentUser(c:AppContext):Promise<AppUser|null>{const raw=getCookie(c,"bge_session");if(!raw)return null;const h=await hash(raw);const user=await c.env.DB.prepare("SELECT users.email, users.role FROM sessions JOIN users ON users.id=sessions.user_id WHERE sessions.token_hash=?").bind(h).first<AppUser>();if(!user)return null;await c.env.DB.prepare("UPDATE sessions SET last_seen_at=? WHERE token_hash=?").bind(new Date().toISOString(),h).run();setSessionCookie(c,raw);return user}
 
 export default app;
