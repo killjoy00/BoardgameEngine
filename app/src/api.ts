@@ -1,6 +1,6 @@
 import { Hono } from "hono";
 import { getCookie } from "hono/cookie";
-import { hash, isEmail, normalizeEmail } from "./auth";
+import { isEmail, loadSessionUser, normalizeEmail } from "./auth";
 import { mapCollectionCsv, type ImportRow } from "./csv";
 import { allocate, matchLocal, recommend, type Candidate } from "./domain";
 import { sendInvitationEmail } from "./email";
@@ -10,12 +10,7 @@ const api = new Hono<{ Bindings: B; Variables: { user: U } }>();
 api.get("/health", (c) => c.json({ ok: true }));
 api.use("*", async (c, next) => {
   const token = getCookie(c, "bge_session");
-  if (!token) return c.json({ error: "Authentication required" }, 401);
-  const u = await c.env.DB.prepare(
-    "SELECT users.id,users.email,users.role FROM sessions JOIN users ON users.id=sessions.user_id WHERE sessions.token_hash=? AND users.disabled_at IS NULL"
-  )
-    .bind(await hash(token))
-    .first<U>();
+  const u = token ? await loadSessionUser(c.env.DB, token) : null;
   if (!u) return c.json({ error: "Authentication required" }, 401);
   c.set("user", u);
   await next();

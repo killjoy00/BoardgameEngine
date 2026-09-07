@@ -4,10 +4,13 @@ import {
   expiresIn,
   hash,
   isEmail,
+  loadSessionUser,
   LOGIN_TOKEN_MINUTES,
+  newSessionWindow,
   normalizeEmail,
   randomCode,
-  randomToken
+  randomToken,
+  SESSION_ABSOLUTE_DAYS
 } from "./auth";
 import { sendSignInEmail } from "./email";
 import { appPage, confirmPage, signInPage, type AppUser } from "./ui";
@@ -215,8 +218,17 @@ async function consumeToken(
       "UPDATE invitations SET status='accepted',accepted_at=COALESCE(accepted_at,CURRENT_TIMESTAMP) WHERE id=? AND status='pending'"
     ).bind(record.user_id)
   ]);
-  await context.env.DB.prepare("INSERT INTO sessions (id, user_id, token_hash) VALUES (?, ?, ?)")
-    .bind(crypto.randomUUID(), record.user_id, await hash(session))
+  const window = newSessionWindow();
+  await context.env.DB.prepare(
+    "INSERT INTO sessions (id, user_id, token_hash, expires_at, absolute_expires_at) VALUES (?, ?, ?, ?, ?)"
+  )
+    .bind(
+      crypto.randomUUID(),
+      record.user_id,
+      await hash(session),
+      window.expiresAt,
+      window.absoluteExpiresAt
+    )
     .run();
   setSessionCookie(context, session);
   return context.redirect("/app");
@@ -243,16 +255,8 @@ async function protectedApp(c: AppContext, section: string) {
 async function currentUser(c: AppContext): Promise<AppUser | null> {
   const raw = getCookie(c, "bge_session");
   if (!raw) return null;
-  const h = await hash(raw);
-  const user = await c.env.DB.prepare(
-    "SELECT users.email, users.role FROM sessions JOIN users ON users.id=sessions.user_id WHERE sessions.token_hash=?"
-  )
-    .bind(h)
-    .first<AppUser>();
+  const user = await loadSessionUser(c.env.DB, raw);
   if (!user) return null;
-  await c.env.DB.prepare("UPDATE sessions SET last_seen_at=? WHERE token_hash=?")
-    .bind(new Date().toISOString(), h)
-    .run();
   setSessionCookie(c, raw);
   return user;
 }
@@ -265,6 +269,11 @@ export default {
    * every still-running sync forward server-side.
    */
   async scheduled(_event: ScheduledController, env: Bindings, ctx: ExecutionContext) {
+    ctx.waitUntil(
+      env.DB.prepare("DELETE FROM sessions WHERE expires_at IS NULL OR expires_at<=?")
+        .bind(new Date().toISOString())
+        .run()
+    );
     ctx.waitUntil(runBackgroundSync(env.DB, env.BGG_API_TOKEN));
   }
 } satisfies ExportedHandler<Bindings>;
@@ -275,6 +284,9 @@ function setSessionCookie(context: AppContext, session: string): void {
     secure: true,
     sameSite: "Lax",
     path: "/",
-    maxAge: 60 * 60 * 24 * 400
+    // The server enforces both an idle and an absolute deadline; the cookie is
+    // deliberately the looser of the two so the browser never drops a token that
+    // is still valid.
+    maxAge: 60 * 60 * 24 * SESSION_ABSOLUTE_DAYS
   });
 }

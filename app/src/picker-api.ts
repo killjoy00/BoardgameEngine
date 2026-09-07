@@ -1,6 +1,6 @@
 import { Hono } from "hono";
 import { getCookie } from "hono/cookie";
-import { hash } from "./auth";
+import { loadSessionUser } from "./auth";
 import {
   recommend,
   recommendWithPolicy,
@@ -65,12 +65,7 @@ const LAB_PLAYER_KEYS = ["2", "3", "4", "5", "6", "7", "8", "8+"];
 
 api.use("*", async (c, next) => {
   const token = getCookie(c, "bge_session");
-  if (!token) return c.json({ error: "Authentication required" }, 401);
-  const user = await c.env.DB.prepare(
-    "SELECT users.id,users.email,users.role FROM sessions JOIN users ON users.id=sessions.user_id WHERE sessions.token_hash=? AND users.disabled_at IS NULL"
-  )
-    .bind(await hash(token))
-    .first<User>();
+  const user = token ? await loadSessionUser(c.env.DB, token) : null;
   if (!user) return c.json({ error: "Authentication required" }, 401);
   c.set("user", user);
   await next();
