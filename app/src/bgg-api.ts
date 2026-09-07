@@ -359,13 +359,7 @@ export async function enrichStep(
         },
         onBackoff: async (delayMs) => {
           await extendBggBackoff(db, delayMs);
-          await renewRunLease(
-            db,
-            userId,
-            runId,
-            lease.token,
-            delayMs + MIN_BGG_INTERVAL_MS
-          );
+          await renewRunLease(db, userId, runId, lease.token, delayMs + MIN_BGG_INTERVAL_MS);
         }
       }).things(ids);
     } catch (error) {
