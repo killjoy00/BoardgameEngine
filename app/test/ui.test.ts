@@ -3,7 +3,14 @@ import { appPage } from "../src/ui";
 
 describe("application UI", () => {
   it("emits syntactically valid client JavaScript", () => {
-    for (const section of ["library", "import", "trades", "missing-prices", "invitations", "account"]) {
+    for (const section of [
+      "library",
+      "import",
+      "trades",
+      "missing-prices",
+      "invitations",
+      "account"
+    ]) {
       const html = appPage({ email: "admin@example.com", role: "admin" }, section);
       const script = html.match(/<script>([\s\S]*)<\/script>/)?.[1];
       expect(script).toBeTruthy();

@@ -1,10 +1,139 @@
-import{describe,it,expect}from"vitest";import{allocate,matchLocal,recommend,recommendWithPolicy}from"../src/domain";
-describe("domain",()=>{
-  it("reconciles allocation cents",()=>expect(allocate(100,[1,1,1])).toEqual([34,33,33]));
-  it("ranks exact-count sentiment and flags downside",()=>{const r=recommend([{id:1,name:"A",minPlayers:2,maxPlayers:4,minutes:30,weight:2,best:20,recommended:20,notRecommended:10},{id:2,name:"B",minPlayers:2,maxPlayers:4,minutes:30,weight:2,best:44,recommended:44,notRecommended:12}],4);expect(r.find(x=>x.id===1)?.warning).toContain("High downside");expect(r.find(x=>x.id===2)?.warning).toContain("Caution")});
-  it("values Best votes above merely Recommended votes in Balanced",()=>{const r=recommend([{id:1,name:"Best-heavy",minPlayers:2,maxPlayers:4,minutes:60,weight:2.5,best:80,recommended:15,notRecommended:5},{id:2,name:"Recommended-heavy",minPlayers:2,maxPlayers:4,minutes:60,weight:2.5,best:5,recommended:90,notRecommended:5}],4);expect(r[0].name).toBe("Best-heavy")});
-  it("shrinks small samples more than large samples",()=>{const r=recommend([{id:1,name:"Tiny",minPlayers:2,maxPlayers:4,minutes:60,weight:2.5,best:8,recommended:1,notRecommended:1},{id:2,name:"Established",minPlayers:2,maxPlayers:4,minutes:60,weight:2.5,best:80,recommended:10,notRecommended:10}],4);expect(r.find(x=>x.name==="Tiny")!.confidence).toBeLessThan(r.find(x=>x.name==="Established")!.confidence)});
-  it("supports alternate lab policies without changing eligibility",()=>{const games=[{id:1,name:"A",minPlayers:2,maxPlayers:4,minutes:60,weight:2,best:40,recommended:50,notRecommended:10}];expect(recommendWithPolicy(games,4,90,0,5,"cautious",10)).toHaveLength(1);expect(recommendWithPolicy(games,5,90,0,5,"cautious",10)).toHaveLength(0)});
-  it("writes a human explanation with Best, downside, votes, and sample quality",()=>{const x=recommend([{id:1,name:"A",minPlayers:2,maxPlayers:4,minutes:60,weight:2,best:60,recommended:35,notRecommended:5}],4)[0];expect(x.reason).toContain("60% call it Best");expect(x.reason).toContain("5% advise against it");expect(x.reason).toContain("100 votes");expect(x.reason).toContain("strong sample")});
-  it("matches ids and normalized names",()=>expect(matchLocal("Azul\n/unknown",[{id:230802,name:"Azul"}])[0].status).toBe("matched"));
+import { describe, it, expect } from "vitest";
+import { allocate, matchLocal, recommend, recommendWithPolicy } from "../src/domain";
+describe("domain", () => {
+  it("reconciles allocation cents", () => expect(allocate(100, [1, 1, 1])).toEqual([34, 33, 33]));
+  it("ranks exact-count sentiment and flags downside", () => {
+    const r = recommend(
+      [
+        {
+          id: 1,
+          name: "A",
+          minPlayers: 2,
+          maxPlayers: 4,
+          minutes: 30,
+          weight: 2,
+          best: 20,
+          recommended: 20,
+          notRecommended: 10
+        },
+        {
+          id: 2,
+          name: "B",
+          minPlayers: 2,
+          maxPlayers: 4,
+          minutes: 30,
+          weight: 2,
+          best: 44,
+          recommended: 44,
+          notRecommended: 12
+        }
+      ],
+      4
+    );
+    expect(r.find((x) => x.id === 1)?.warning).toContain("High downside");
+    expect(r.find((x) => x.id === 2)?.warning).toContain("Caution");
+  });
+  it("values Best votes above merely Recommended votes in Balanced", () => {
+    const r = recommend(
+      [
+        {
+          id: 1,
+          name: "Best-heavy",
+          minPlayers: 2,
+          maxPlayers: 4,
+          minutes: 60,
+          weight: 2.5,
+          best: 80,
+          recommended: 15,
+          notRecommended: 5
+        },
+        {
+          id: 2,
+          name: "Recommended-heavy",
+          minPlayers: 2,
+          maxPlayers: 4,
+          minutes: 60,
+          weight: 2.5,
+          best: 5,
+          recommended: 90,
+          notRecommended: 5
+        }
+      ],
+      4
+    );
+    expect(r[0].name).toBe("Best-heavy");
+  });
+  it("shrinks small samples more than large samples", () => {
+    const r = recommend(
+      [
+        {
+          id: 1,
+          name: "Tiny",
+          minPlayers: 2,
+          maxPlayers: 4,
+          minutes: 60,
+          weight: 2.5,
+          best: 8,
+          recommended: 1,
+          notRecommended: 1
+        },
+        {
+          id: 2,
+          name: "Established",
+          minPlayers: 2,
+          maxPlayers: 4,
+          minutes: 60,
+          weight: 2.5,
+          best: 80,
+          recommended: 10,
+          notRecommended: 10
+        }
+      ],
+      4
+    );
+    expect(r.find((x) => x.name === "Tiny")!.confidence).toBeLessThan(
+      r.find((x) => x.name === "Established")!.confidence
+    );
+  });
+  it("supports alternate lab policies without changing eligibility", () => {
+    const games = [
+      {
+        id: 1,
+        name: "A",
+        minPlayers: 2,
+        maxPlayers: 4,
+        minutes: 60,
+        weight: 2,
+        best: 40,
+        recommended: 50,
+        notRecommended: 10
+      }
+    ];
+    expect(recommendWithPolicy(games, 4, 90, 0, 5, "cautious", 10)).toHaveLength(1);
+    expect(recommendWithPolicy(games, 5, 90, 0, 5, "cautious", 10)).toHaveLength(0);
+  });
+  it("writes a human explanation with Best, downside, votes, and sample quality", () => {
+    const x = recommend(
+      [
+        {
+          id: 1,
+          name: "A",
+          minPlayers: 2,
+          maxPlayers: 4,
+          minutes: 60,
+          weight: 2,
+          best: 60,
+          recommended: 35,
+          notRecommended: 5
+        }
+      ],
+      4
+    )[0];
+    expect(x.reason).toContain("60% call it Best");
+    expect(x.reason).toContain("5% advise against it");
+    expect(x.reason).toContain("100 votes");
+    expect(x.reason).toContain("strong sample");
+  });
+  it("matches ids and normalized names", () =>
+    expect(matchLocal("Azul\n/unknown", [{ id: 230802, name: "Azul" }])[0].status).toBe("matched"));
 });

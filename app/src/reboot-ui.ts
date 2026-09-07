@@ -1,9 +1,9 @@
-import{escapeHtml,type AppUser}from"./ui";
-import{POWERED_BY_BGG_LOGO}from"./bgg-logo";
+import { escapeHtml, type AppUser } from "./ui";
+import { POWERED_BY_BGG_LOGO } from "./bgg-logo";
 
-export function rebootPage(user:AppUser):string{
-  const admin=user.role==="admin"?'<a href="/app/invitations">Invitations</a>':"";
-  return`<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Tonight · BoardGameEngine</title><style>${styles}</style></head><body>
+export function rebootPage(user: AppUser): string {
+  const admin = user.role === "admin" ? '<a href="/app/invitations">Invitations</a>' : "";
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Tonight · BoardGameEngine</title><style>${styles}</style></head><body>
 <header class="topbar"><div class="topbar-inner"><a class="brand" href="/app"><span class="die" aria-hidden="true">••<br>••</span><strong>BoardGame<span>Engine</span></strong></a><nav aria-label="Application"><a class="active" href="/app">Tonight</a><a href="/app/library">Library</a><a href="/app/account">Account</a>${admin}</nav><form action="/auth/logout" method="post"><button class="quiet" type="submit">Sign out</button></form></div></header>
 <main class="shell">
 <section class="intro"><p class="section-label">Tonight</p><h1>What should we play?</h1><p>Set the table and get five games from your own shelf, ranked with BoardGameGeek player-count data instead of a random draw.</p></section>
@@ -30,7 +30,7 @@ export function rebootPage(user:AppUser):string{
 <script>${clientScript}</script></body></html>`;
 }
 
-const clientScript=`(()=>{
+const clientScript = `(()=>{
 const $=id=>document.getElementById(id),state={account:null,latestRun:null,status:null,syncing:false,players:4,playerBand:'4',minWeight:2,maxWeight:3.25,mode:'any'};
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
 async function request(url,options={}){const response=await fetch(url,{...options,headers:{'Content-Type':'application/json',...(options.headers||{})}});let data={};try{data=await response.json()}catch{}if(!response.ok){const error=new Error(data.error||('Request failed ('+response.status+')'));error.status=response.status;error.data=data;throw error}return data}
@@ -96,7 +96,7 @@ function renderResults(data){
 $('connect-form').addEventListener('submit',connect);$('sync-button').addEventListener('click',startSync);$('change-user').addEventListener('click',changeUser);$('picker-form').addEventListener('submit',pick);$('rerun').addEventListener('click',()=>{$('picker-form').scrollIntoView({behavior:'smooth',block:'start'})});load()
 })();`;
 
-const styles=`
+const styles = `
 :root{--bg:#f3f1eb;--surface:#fdfcf8;--ink:#20231f;--muted:#6b6f68;--line:#d7d5ce;--line-strong:#bebcb5;--accent:#315744;--accent-soft:#e5ece7;--danger:#984b39;--focus:#8ba99a}
 *{box-sizing:border-box}
 html{background:var(--bg)}

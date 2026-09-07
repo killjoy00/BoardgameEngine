@@ -1,13 +1,19 @@
 export const LOGIN_TOKEN_MINUTES = 30;
 const encoder = new TextEncoder();
 
-export function normalizeEmail(value: string): string { return value.trim().toLowerCase(); }
-export function isEmail(value: string): boolean { return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value); }
+export function normalizeEmail(value: string): string {
+  return value.trim().toLowerCase();
+}
+export function isEmail(value: string): boolean {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
+}
 
 export function randomToken(bytes = 32): string {
   const data = crypto.getRandomValues(new Uint8Array(bytes));
   let binary = "";
-  data.forEach((byte) => { binary += String.fromCharCode(byte); });
+  data.forEach((byte) => {
+    binary += String.fromCharCode(byte);
+  });
   return btoa(binary).replaceAll("+", "-").replaceAll("/", "_").replaceAll("=", "");
 }
 
