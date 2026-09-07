@@ -36,6 +36,9 @@ const MIN_BGG_INTERVAL_MS = 5000,
   // A dead Worker should not strand a run forever, but the lease must comfortably
   // outlive a slow BGG attempt plus normal retry pacing.
   RUN_LEASE_MS = 120_000,
+  // Starting includes the slower Collection endpoint and can legitimately spend
+  // time queued/retrying before a run row exists, so give this lease more room.
+  SYNC_START_LEASE_MS = 300_000,
   // Wall-clock budget for one scheduled sweep. Kept under the one-minute cron
   // interval so consecutive ticks do not overlap.
   BACKGROUND_BUDGET_MS = 45_000;
@@ -85,110 +88,129 @@ api.post("/sync/start", async (c) => {
     account = await getAccount(c.env.DB, user.id);
   }
   if (!account) return c.json({ error: "Connect a BoardGameGeek username before syncing" }, 400);
-  const active = await activeRun(c.env.DB, user.id);
-  if (active) return c.json({ error: "A sync is already running", run: withDuration(active) }, 409);
-  const retryAfterMs = await claimBggSlot(c.env.DB, account.id);
-  if (retryAfterMs > 0)
+
+  const startLease = await claimSyncStartLease(c.env.DB, account.id);
+  if (startLease.outcome === "busy")
     return c.json(
-      { error: "BoardGameGeek requests are paced to protect the API", retryAfterMs },
-      429
+      { error: "A BoardGameGeek sync is already starting", retryAfterMs: startLease.retryAfterMs },
+      409
     );
-  let attempts = 0,
-    retries = 0,
-    items: BggCollectionItem[];
+
   try {
-    items = await new BggClient(c.env.BGG_API_TOKEN, {
-      beforeAttempt: async (attempt) => {
-        if (attempt > 1) await waitForBggSlot(c.env.DB, account.id);
-      },
-      onAttempt: (_status, attempt) => {
-        attempts++;
-        if (attempt > 1) retries++;
-      }
-    }).collection(account.username, { own: 1, excludesubtype: "boardgameexpansion" });
-  } catch (error) {
-    const message = publicError(error);
-    await c.env.DB.prepare("UPDATE source_accounts SET last_error=?,updated_at=? WHERE id=?")
-      .bind(message, new Date().toISOString(), account.id)
-      .run();
-    return c.json({ error: message }, 502);
-  }
-  if (!items.length) {
-    const message = `BoardGameGeek returned no owned base games for @${account.username}. Check the username and public collection before syncing.`;
-    await c.env.DB.prepare("UPDATE source_accounts SET last_error=?,updated_at=? WHERE id=?")
-      .bind(message, new Date().toISOString(), account.id)
-      .run();
-    return c.json({ error: message }, 422);
-  }
-  const runId = crypto.randomUUID(),
-    now = new Date().toISOString(),
-    cutoff = new Date(Date.now() - FRESH_DAYS * 86400000).toISOString(),
-    freshRows = await c.env.DB.prepare(
-      "SELECT id FROM games WHERE bgg_fetched_at IS NOT NULL AND bgg_fetched_at>=?"
-    )
-      .bind(cutoff)
-      .all<{ id: number }>(),
-    fresh = new Set(freshRows.results.map((row) => Number(row.id))),
-    initiallyDone = items.filter((item) => fresh.has(item.id)).length;
-  await c.env.DB.prepare(
-    "INSERT INTO bgg_sync_runs(id,user_id,source_account_id,total_items,enriched_items,request_attempts,retry_attempts)VALUES(?,?,?,?,?,?,?)"
-  )
-    .bind(runId, user.id, account.id, items.length, initiallyDone, attempts, retries)
-    .run();
-  for (const group of chunks(items, 25)) {
-    const statements: D1PreparedStatement[] = [];
-    for (const item of group) {
-      const collectionId = collectionItemId(user.id, item);
-      statements.push(
-        c.env.DB.prepare("INSERT INTO games(id,name)VALUES(?,?) ON CONFLICT(id) DO NOTHING").bind(
-          item.id,
-          item.name
-        )
+    // Re-check only after owning the start lease. A previous starter may have
+    // created the run between this request arriving and acquiring the lease.
+    const active = await activeRun(c.env.DB, user.id);
+    if (active)
+      return c.json({ error: "A sync is already running", run: withDuration(active) }, 409);
+
+    const retryAfterMs = await claimBggSlot(c.env.DB, account.id);
+    if (retryAfterMs > 0)
+      return c.json(
+        { error: "BoardGameGeek requests are paced to protect the API", retryAfterMs },
+        429
       );
-      statements.push(
-        c.env.DB.prepare(
-          "INSERT INTO collection_items(id,user_id,bgg_id,source_coll_id,own,for_trade,wishlist,wishlist_priority,rating,source_name,source_account_id,source_synced_at)VALUES(?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET bgg_id=excluded.bgg_id,source_coll_id=excluded.source_coll_id,own=excluded.own,for_trade=excluded.for_trade,wishlist=excluded.wishlist,wishlist_priority=excluded.wishlist_priority,rating=COALESCE(excluded.rating,collection_items.rating),source_name=excluded.source_name,source_account_id=excluded.source_account_id,source_synced_at=excluded.source_synced_at"
-        ).bind(
-          collectionId,
-          user.id,
-          item.id,
-          item.collId,
-          item.own ? 1 : 0,
-          item.forTrade ? 1 : 0,
-          item.wishlist ? 1 : 0,
-          item.wishlistPriority,
-          item.rating,
-          item.name,
-          account.id,
-          now
-        )
-      );
-      statements.push(
-        c.env.DB.prepare(
-          "INSERT INTO bgg_sync_items(run_id,bgg_id,collection_item_id,status)VALUES(?,?,?,?)"
-        ).bind(runId, item.id, collectionId, fresh.has(item.id) ? "done" : "pending")
-      );
+    let attempts = 0,
+      retries = 0,
+      items: BggCollectionItem[];
+    try {
+      items = await new BggClient(c.env.BGG_API_TOKEN, {
+        beforeAttempt: async (attempt) => {
+          if (attempt > 1) {
+            await renewSyncStartLease(c.env.DB, account.id, startLease.token);
+            await waitForBggSlot(c.env.DB, account.id);
+          }
+        },
+        onAttempt: (_status, attempt) => {
+          attempts++;
+          if (attempt > 1) retries++;
+        }
+      }).collection(account.username, { own: 1, excludesubtype: "boardgameexpansion" });
+    } catch (error) {
+      const message = publicError(error);
+      await c.env.DB.prepare("UPDATE source_accounts SET last_error=?,updated_at=? WHERE id=?")
+        .bind(message, new Date().toISOString(), account.id)
+        .run();
+      return c.json({ error: message }, 502);
     }
-    if (statements.length) await c.env.DB.batch(statements);
+    if (!items.length) {
+      const message = `BoardGameGeek returned no owned base games for @${account.username}. Check the username and public collection before syncing.`;
+      await c.env.DB.prepare("UPDATE source_accounts SET last_error=?,updated_at=? WHERE id=?")
+        .bind(message, new Date().toISOString(), account.id)
+        .run();
+      return c.json({ error: message }, 422);
+    }
+    const runId = crypto.randomUUID(),
+      now = new Date().toISOString(),
+      cutoff = new Date(Date.now() - FRESH_DAYS * 86400000).toISOString(),
+      freshRows = await c.env.DB.prepare(
+        "SELECT id FROM games WHERE bgg_fetched_at IS NOT NULL AND bgg_fetched_at>=?"
+      )
+        .bind(cutoff)
+        .all<{ id: number }>(),
+      fresh = new Set(freshRows.results.map((row) => Number(row.id))),
+      initiallyDone = items.filter((item) => fresh.has(item.id)).length;
+    await c.env.DB.prepare(
+      "INSERT INTO bgg_sync_runs(id,user_id,source_account_id,total_items,enriched_items,request_attempts,retry_attempts)VALUES(?,?,?,?,?,?,?)"
+    )
+      .bind(runId, user.id, account.id, items.length, initiallyDone, attempts, retries)
+      .run();
+    for (const group of chunks(items, 25)) {
+      const statements: D1PreparedStatement[] = [];
+      for (const item of group) {
+        const collectionId = collectionItemId(user.id, item);
+        statements.push(
+          c.env.DB.prepare("INSERT INTO games(id,name)VALUES(?,?) ON CONFLICT(id) DO NOTHING").bind(
+            item.id,
+            item.name
+          )
+        );
+        statements.push(
+          c.env.DB.prepare(
+            "INSERT INTO collection_items(id,user_id,bgg_id,source_coll_id,own,for_trade,wishlist,wishlist_priority,rating,source_name,source_account_id,source_synced_at)VALUES(?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET bgg_id=excluded.bgg_id,source_coll_id=excluded.source_coll_id,own=excluded.own,for_trade=excluded.for_trade,wishlist=excluded.wishlist,wishlist_priority=excluded.wishlist_priority,rating=COALESCE(excluded.rating,collection_items.rating),source_name=excluded.source_name,source_account_id=excluded.source_account_id,source_synced_at=excluded.source_synced_at"
+          ).bind(
+            collectionId,
+            user.id,
+            item.id,
+            item.collId,
+            item.own ? 1 : 0,
+            item.forTrade ? 1 : 0,
+            item.wishlist ? 1 : 0,
+            item.wishlistPriority,
+            item.rating,
+            item.name,
+            account.id,
+            now
+          )
+        );
+        statements.push(
+          c.env.DB.prepare(
+            "INSERT INTO bgg_sync_items(run_id,bgg_id,collection_item_id,status)VALUES(?,?,?,?)"
+          ).bind(runId, item.id, collectionId, fresh.has(item.id) ? "done" : "pending")
+        );
+      }
+      if (statements.length) await c.env.DB.batch(statements);
+    }
+    await c.env.DB.prepare(
+      "UPDATE collection_items SET own=0,source_synced_at=? WHERE user_id=? AND source_account_id=? AND own=1 AND NOT EXISTS(SELECT 1 FROM bgg_sync_items si WHERE si.run_id=? AND si.collection_item_id=collection_items.id)"
+    )
+      .bind(now, user.id, account.id, runId)
+      .run();
+    const complete = initiallyDone === items.length;
+    await c.env.DB.batch([
+      c.env.DB.prepare(
+        "UPDATE source_accounts SET last_collection_sync_at=?,last_full_sync_at=CASE WHEN ? THEN ? ELSE last_full_sync_at END,last_error=NULL,updated_at=? WHERE id=?"
+      ).bind(now, complete ? 1 : 0, now, now, account.id),
+      c.env.DB.prepare(
+        "UPDATE bgg_sync_runs SET status=CASE WHEN ? THEN 'complete' ELSE 'running' END,completed_at=CASE WHEN ? THEN ? ELSE NULL END WHERE id=?"
+      ).bind(complete ? 1 : 0, complete ? 1 : 0, now, runId)
+    ]);
+    return c.json({
+      run: withDuration(await runStatus(c.env.DB, user.id, runId)),
+      nextRequestAfterMs: complete ? 0 : MIN_BGG_INTERVAL_MS
+    });
+  } finally {
+    await releaseSyncStartLease(c.env.DB, account.id, startLease.token);
   }
-  await c.env.DB.prepare(
-    "UPDATE collection_items SET own=0,source_synced_at=? WHERE user_id=? AND source_account_id=? AND own=1 AND NOT EXISTS(SELECT 1 FROM bgg_sync_items si WHERE si.run_id=? AND si.collection_item_id=collection_items.id)"
-  )
-    .bind(now, user.id, account.id, runId)
-    .run();
-  const complete = initiallyDone === items.length;
-  await c.env.DB.batch([
-    c.env.DB.prepare(
-      "UPDATE source_accounts SET last_collection_sync_at=?,last_full_sync_at=CASE WHEN ? THEN ? ELSE last_full_sync_at END,last_error=NULL,updated_at=? WHERE id=?"
-    ).bind(now, complete ? 1 : 0, now, now, account.id),
-    c.env.DB.prepare(
-      "UPDATE bgg_sync_runs SET status=CASE WHEN ? THEN 'complete' ELSE 'running' END,completed_at=CASE WHEN ? THEN ? ELSE NULL END WHERE id=?"
-    ).bind(complete ? 1 : 0, complete ? 1 : 0, now, runId)
-  ]);
-  return c.json({
-    run: withDuration(await runStatus(c.env.DB, user.id, runId)),
-    nextRequestAfterMs: complete ? 0 : MIN_BGG_INTERVAL_MS
-  });
 });
 
 api.post("/sync/:id/enrich", async (c) => {
@@ -250,6 +272,10 @@ export type RunLeaseClaim =
   | { outcome: "claimed"; token: string }
   | { outcome: "busy"; retryAfterMs: number }
   | { outcome: "inactive" };
+
+export type SyncStartLeaseClaim =
+  | { outcome: "claimed"; token: string }
+  | { outcome: "busy"; retryAfterMs: number };
 
 /**
  * Advance one sync run by a single BoardGameGeek Thing batch (at most 20 IDs).
@@ -578,6 +604,68 @@ async function waitForBggSlot(db: D1Database, accountId: string): Promise<void> 
     await new Promise<void>((resolve) => setTimeout(resolve, retryAfterMs));
     retryAfterMs = await claimBggSlot(db, accountId);
   }
+}
+
+/**
+ * Lease the Collection/start phase before a bgg_sync_runs row exists. This closes
+ * the race where two tabs both pass the active-run check and launch Collection
+ * requests. The token-specific release cannot clear a newer recovered lease.
+ */
+export async function claimSyncStartLease(
+  db: D1Database,
+  accountId: string,
+  now = new Date()
+): Promise<SyncStartLeaseClaim> {
+  const token = crypto.randomUUID(),
+    nowMs = now.getTime(),
+    nowIso = now.toISOString(),
+    leaseUntil = new Date(nowMs + SYNC_START_LEASE_MS).toISOString();
+  const claimed = await db
+    .prepare(
+      "UPDATE source_accounts SET sync_start_token=?,sync_start_until=? WHERE id=? AND (sync_start_until IS NULL OR sync_start_until<=?)"
+    )
+    .bind(token, leaseUntil, accountId, nowIso)
+    .run();
+  if (Number(claimed.meta.changes ?? 0) > 0) return { outcome: "claimed", token };
+
+  const current = await db
+    .prepare("SELECT sync_start_until syncStartUntil FROM source_accounts WHERE id=?")
+    .bind(accountId)
+    .first<{ syncStartUntil: string | null }>();
+  const remaining = current?.syncStartUntil
+    ? Date.parse(current.syncStartUntil) - nowMs
+    : SYNC_START_LEASE_MS;
+  return {
+    outcome: "busy",
+    retryAfterMs: Number.isFinite(remaining)
+      ? Math.max(1, Math.min(MIN_BGG_INTERVAL_MS, remaining))
+      : MIN_BGG_INTERVAL_MS
+  };
+}
+
+async function renewSyncStartLease(
+  db: D1Database,
+  accountId: string,
+  token: string
+): Promise<void> {
+  const leaseUntil = new Date(Date.now() + SYNC_START_LEASE_MS).toISOString();
+  await db
+    .prepare("UPDATE source_accounts SET sync_start_until=? WHERE id=? AND sync_start_token=?")
+    .bind(leaseUntil, accountId, token)
+    .run();
+}
+
+async function releaseSyncStartLease(
+  db: D1Database,
+  accountId: string,
+  token: string
+): Promise<void> {
+  await db
+    .prepare(
+      "UPDATE source_accounts SET sync_start_token=NULL,sync_start_until=NULL WHERE id=? AND sync_start_token=?"
+    )
+    .bind(accountId, token)
+    .run();
 }
 
 /**
