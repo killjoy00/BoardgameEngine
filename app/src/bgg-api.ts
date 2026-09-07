@@ -274,8 +274,7 @@ export type RunLeaseClaim =
   | { outcome: "inactive" };
 
 export type SyncStartLeaseClaim =
-  | { outcome: "claimed"; token: string }
-  | { outcome: "busy"; retryAfterMs: number };
+  { outcome: "claimed"; token: string } | { outcome: "busy"; retryAfterMs: number };
 
 /**
  * Advance one sync run by a single BoardGameGeek Thing batch (at most 20 IDs).

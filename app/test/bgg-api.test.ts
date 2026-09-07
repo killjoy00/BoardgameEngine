@@ -74,12 +74,7 @@ function dbWithStartLease() {
         },
         async run() {
           if (sql.startsWith("UPDATE source_accounts SET sync_start_token")) {
-            const [token, until, accountId, nowIso] = args as [
-              string,
-              string,
-              string,
-              string
-            ];
+            const [token, until, accountId, nowIso] = args as [string, string, string, string];
             if (
               accountId === "account-1" &&
               (syncStartUntil === null || syncStartUntil <= nowIso)
@@ -201,11 +196,7 @@ describe("BGG sync API helpers", () => {
     const busy = first.outcome === "busy" ? first : second;
     expect(busy).toMatchObject({ outcome: "busy", retryAfterMs: 5000 });
 
-    const recovered = await claimSyncStartLease(
-      db,
-      "account-1",
-      new Date(now.getTime() + 300_000)
-    );
+    const recovered = await claimSyncStartLease(db, "account-1", new Date(now.getTime() + 300_000));
     expect(recovered.outcome).toBe("claimed");
   });
 
