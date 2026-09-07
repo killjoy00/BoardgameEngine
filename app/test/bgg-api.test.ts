@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   claimBggSlot,
   claimRunLease,
+  claimSyncStartLease,
   collectionItemId,
   normalizeUsername,
   runBackgroundSync,
@@ -57,6 +58,48 @@ function dbWithAtomicSlot(initialLastRequestAt: string | null = null) {
     }
   } as unknown as D1Database;
   return { db, gateUpdates, accountUpdates };
+}
+
+/** Stateful D1 stand-in for the Collection/start lease before a run exists. */
+function dbWithStartLease() {
+  let syncStartToken: string | null = null;
+  let syncStartUntil: string | null = null;
+  const db = {
+    prepare(sql: string) {
+      let args: unknown[] = [];
+      return {
+        bind(...values: unknown[]) {
+          args = values;
+          return this;
+        },
+        async run() {
+          if (sql.startsWith("UPDATE source_accounts SET sync_start_token")) {
+            const [token, until, accountId, nowIso] = args as [
+              string,
+              string,
+              string,
+              string
+            ];
+            if (
+              accountId === "account-1" &&
+              (syncStartUntil === null || syncStartUntil <= nowIso)
+            ) {
+              syncStartToken = token;
+              syncStartUntil = until;
+              return { meta: { changes: 1 } };
+            }
+            return { meta: { changes: 0 } };
+          }
+          return { meta: { changes: 0 } };
+        },
+        async first() {
+          if (sql.startsWith("SELECT sync_start_until")) return { syncStartUntil };
+          return null;
+        }
+      };
+    }
+  } as unknown as D1Database;
+  return { db, state: () => ({ syncStartToken, syncStartUntil }) };
 }
 
 /** Stateful D1 stand-in for one recoverable enrichment-run lease. */
@@ -143,6 +186,27 @@ describe("BGG sync API helpers", () => {
     expect(accountUpdates).toHaveLength(1);
     expect(await claimBggSlot(db, "account-2", new Date(now.getTime() + 5000))).toBe(0);
     expect(accountUpdates).toHaveLength(2);
+  });
+
+  it("lets only one tab start a BGG sync before the run row exists", async () => {
+    const { db, state } = dbWithStartLease();
+    const now = new Date("2026-09-07T16:30:00.000Z");
+    const [first, second] = await Promise.all([
+      claimSyncStartLease(db, "account-1", now),
+      claimSyncStartLease(db, "account-1", now)
+    ]);
+
+    expect([first.outcome, second.outcome].sort()).toEqual(["busy", "claimed"]);
+    expect(state().syncStartToken).toBeTruthy();
+    const busy = first.outcome === "busy" ? first : second;
+    expect(busy).toMatchObject({ outcome: "busy", retryAfterMs: 5000 });
+
+    const recovered = await claimSyncStartLease(
+      db,
+      "account-1",
+      new Date(now.getTime() + 300_000)
+    );
+    expect(recovered.outcome).toBe("claimed");
   });
 
   it("lets only one driver lease a sync run and recovers an expired lease", async () => {

@@ -162,6 +162,21 @@ export function batches<T>(items: T[], size = 20): T[][] {
   return out;
 }
 
+export function retryDelayMs(
+  response: Response,
+  fallbackMs = DEFAULT_INTERVAL_MS,
+  now = Date.now()
+): number {
+  const raw = response.headers.get("Retry-After");
+  if (!raw) return fallbackMs;
+  const seconds = Number(raw);
+  if (Number.isFinite(seconds) && seconds >= 0) {
+    return Math.max(fallbackMs, Math.ceil(seconds * 1000));
+  }
+  const at = Date.parse(raw);
+  return Number.isFinite(at) ? Math.max(fallbackMs, at - now) : fallbackMs;
+}
+
 export async function fetchWithBackoff(
   fetcher: () => Promise<Response>,
   wait = (ms: number) => new Promise<void>((r) => setTimeout(r, ms)),
@@ -187,7 +202,7 @@ export async function fetchWithBackoff(
     last = response;
     await onAttempt?.(response.status, i + 1);
     if (!RETRYABLE.has(response.status)) return response;
-    if (i < attempts - 1) await wait(intervalMs);
+    if (i < attempts - 1) await wait(retryDelayMs(response, intervalMs));
   }
   throw new Error(
     `BGG request remained unavailable after ${attempts} attempts (last status ${last?.status ?? "unknown"})`

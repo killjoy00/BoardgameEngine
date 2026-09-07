@@ -63,6 +63,21 @@ describe("BGG adapter", () => {
     expect(r.status).toBe(200);
     expect(waits).toEqual([5000, 5000]);
   });
+  it("honors a longer Retry-After response from BGG", async () => {
+    let n = 0;
+    const waits: number[] = [];
+    const r = await fetchWithBackoff(
+      async () =>
+        ++n === 1
+          ? new Response("", { status: 429, headers: { "Retry-After": "12" } })
+          : new Response("", { status: 200 }),
+      async (ms) => {
+        waits.push(ms);
+      }
+    );
+    expect(r.status).toBe(200);
+    expect(waits).toEqual([12_000]);
+  });
   it("reports each HTTP attempt without exposing request content", async () => {
     let n = 0;
     const seen: { status: number; attempt: number }[] = [];
