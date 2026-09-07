@@ -14,36 +14,47 @@
 - [x] Show Best / Recommended / Not Recommended evidence and vote sample size on each result.
 - [x] Exclude for-trade games by default with an explicit include toggle.
 - [x] Add linked Powered by BGG attribution to the API-backed experience.
+- [x] Support 2–7 and 8+ player tables, preferring the BGG `8+` poll and falling back to exact `8` when needed.
+- [x] Add an explicit Either / Competitive / Cooperative table-style filter from normalized BGG mechanics.
 - [ ] Sign in as the acceptance user and complete the first full `killjoy00` product sync.
 - [ ] Compare synced ownership/status against the existing CSV-backed collection without overwriting private copy fields.
-- [ ] Manually review real recommendation results for at least 2-, 3-, 4-, 5-, and 6-player tables across light, medium, and heavy settings.
-- [ ] Record obviously good/bad rankings and calibrate the Balanced recommendation formula against them.
-- [ ] Decide how exact-count polls such as `6+` should behave when a requested high player count has no literal numeric poll row.
-- [ ] Review sync UX on mobile during the first ~665-game enrichment run and fix any friction.
+- [ ] Manually review real recommendation results across varied player counts, time limits, complexity bands, and table styles using the Recommendation Lab.
+- [ ] Record `great` / `reasonable` / `wrong` labels for obviously good and bad rankings and use that evidence for the next Balanced-policy calibration pass.
+- [ ] Review sync UX on mobile during a full ~665-game enrichment run and fix any remaining friction.
 
 ## Reliability and acceptance testing
 
 - [x] Parser/domain/unit coverage for BGG auth header, Collection/Thing/Search parsing, batching, pacing, recommendation scoring, and sync identity helpers.
 - [x] Compile-test the emitted picker-first browser JavaScript.
+- [x] Compile-test the emitted Recommendation Lab browser JavaScript.
 - [x] Keep destructive BGG reconciliation separated from app-owned copy metadata.
 - [x] Maintain same-origin enforcement, browser security headers, output escaping, and magic-link rate limiting.
 - [x] Maintain scheduled private D1 exports and documented restore/incident procedures.
+- [x] Add structured redacted sync telemetry: duration, request attempts, retries, failed requests, omitted Thing IDs, and sanitized failure categories without logging private fields or tokens.
+- [x] Validate the telemetry-enabled BGG adapter against the authenticated live BGG probe.
 - [ ] Complete and record a production restore drill.
 - [ ] Add authenticated browser-level end-to-end coverage for Connect → Sync → Pick once a dedicated non-production account/inbox is available.
-- [ ] Add structured redacted sync telemetry: duration, requests, retries, missing Thing IDs, and failure categories without logging private fields or tokens.
 - [ ] Add periodic full BGG reconciliation after first-sync behavior is proven.
 - [ ] Decide whether incremental Collection refresh adds enough value versus simpler periodic full refreshes at the current user scale.
 
-## Recommendation work after first real sync
+## Recommendation quality
 
-- [ ] Calibrate sample-size confidence from real results rather than assuming 50 votes is the final saturation point.
-- [ ] Test alternative downside penalties while always keeping raw poll values visible.
-- [ ] Improve fewer-than-five relaxation suggestions so they identify which constraint actually excludes the most candidates.
-- [ ] Decide treatment of missing play time, missing weight, and missing exact-count poll values; never silently impute favorable data.
-- [ ] Add saved table profiles only after the basic table controls prove sufficient.
+- [x] Replace equal Best/Recommended treatment with a Balanced policy that gives Best votes more influence while preserving raw BGG evidence.
+- [x] Replace the fixed `votes / 50` confidence ramp with smooth sample-size shrinkage toward a neutral prior.
+- [x] Strengthen the explicit penalty for Not Recommended sentiment while keeping the raw downside visible.
+- [x] Keep alternative Best-seat, Cautious, and Broad-positive policies in an admin calibration surface rather than exposing tuning modes to normal users.
+- [x] Add an admin Recommendation Lab with a 63-scenario matrix and top-10 side-by-side policy comparisons.
+- [x] Persist recommendation-quality feedback by exact scenario, policy, game, rank, and score.
+- [x] Upgrade recommendation explanations to state Best share, downside share, vote count, and sample quality.
+- [x] Improve fewer-than-five relaxation suggestions so they calculate how many games each relaxed constraint would actually add.
+- [ ] Use real Lab feedback to calibrate the exact Balanced weights and prior strength; current values remain a tested starting policy, not gospel.
+- [ ] Decide treatment of missing play time, missing weight, and missing exact-count poll values beyond the explicit 8+ fallback; never silently impute favorable data.
+- [ ] Add saved table profiles only after the basic table controls and Balanced ranking prove credible in real use.
 - [ ] Add collection coverage analysis only after recommendation filters/policies stabilize.
 
-## Next major product capability — group libraries
+## Next major product capability — group libraries — intentionally paused
+
+The group-library work remains the next major capability in the charter, but it is intentionally not being built during the current recommendation-quality phase.
 
 - [ ] Model multiple public BGG source accounts participating in a table profile without conflating them with the signed-in user's private collection metadata.
 - [ ] Deduplicate available games by BGG ID while retaining all owners.
