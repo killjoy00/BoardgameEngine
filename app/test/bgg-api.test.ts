@@ -159,12 +159,7 @@ describe("BGG sync API helpers", () => {
     const busy = first.outcome === "busy" ? first : second;
     expect(busy).toMatchObject({ outcome: "busy", retryAfterMs: 5000 });
 
-    const recovered = await claimRunLease(
-      db,
-      "user-1",
-      "run-1",
-      new Date(now.getTime() + 120_000)
-    );
+    const recovered = await claimRunLease(db, "user-1", "run-1", new Date(now.getTime() + 120_000));
     expect(recovered.outcome).toBe("claimed");
   });
 });
