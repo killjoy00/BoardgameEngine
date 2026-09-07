@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { preferPollRows, suggestRelaxations, validatePicker } from "../src/picker-api";
+import { PICKER_MAX_MINUTES, PICKER_MIN_MINUTES, RELAXATION_MINUTE_STEPS } from "../src/domain";
 
 describe("live picker input", () => {
   it("accepts a normal table and defaults optional filters", () => {
@@ -104,5 +105,53 @@ describe("live picker input", () => {
     expect(suggestions.some((x) => x.includes("Allow 120 minutes") && x.includes("2 games"))).toBe(
       true
     );
+  });
+});
+
+describe("picker time range", () => {
+  it("accepts exactly the span the slider can produce", () => {
+    const at = (minutes: number) =>
+      validatePicker({ players: 4, minutes, minWeight: 0, maxWeight: 5 }).ok;
+    expect(at(PICKER_MIN_MINUTES)).toBe(true);
+    expect(at(PICKER_MAX_MINUTES)).toBe(true);
+    expect(at(PICKER_MIN_MINUTES - 15)).toBe(false);
+    expect(at(PICKER_MAX_MINUTES + 15)).toBe(false);
+  });
+
+  it("never suggests a time ceiling the slider cannot reach", () => {
+    // The ladder used to run to 720 while the slider stopped at 300, so the
+    // picker could suggest a relaxation the user had no way to apply.
+    for (const step of RELAXATION_MINUTE_STEPS) {
+      expect(step).toBeGreaterThanOrEqual(PICKER_MIN_MINUTES);
+      expect(step).toBeLessThanOrEqual(PICKER_MAX_MINUTES);
+    }
+  });
+
+  it("offers no time relaxation once the table is already at the maximum", () => {
+    const row = (id: number, minutes: number) => ({
+      id,
+      name: "G" + id,
+      sourceName: null,
+      minPlayers: 2,
+      maxPlayers: 5,
+      minutes,
+      weight: 2.5,
+      pollKey: "4",
+      best: 20,
+      recommended: 20,
+      notRecommended: 2,
+      cooperative: 0,
+      forTrade: 0
+    });
+    const input = validatePicker({
+      players: 4,
+      minutes: PICKER_MAX_MINUTES,
+      minWeight: 0,
+      maxWeight: 5
+    });
+    expect(input.ok).toBe(true);
+    if (!input.ok) return;
+    const suggestions = suggestRelaxations([row(1, 60), row(2, 600)], input.value);
+    expect(suggestions.some((x) => x.includes("minutes"))).toBe(false);
   });
 });

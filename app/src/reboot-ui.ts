@@ -1,8 +1,23 @@
 import { escapeHtml, type AppUser } from "./ui";
 import { POWERED_BY_BGG_LOGO } from "./bgg-logo";
+import {
+  PICKER_DEFAULT_MINUTES,
+  PICKER_MAX_MINUTES,
+  PICKER_MIN_MINUTES,
+  PICKER_MINUTE_STEP
+} from "./domain";
+
+function minutesLabel(minutes: number): string {
+  if (minutes < 60) return `${minutes} min`;
+  const hours = minutes / 60;
+  return `${Number.isInteger(hours) ? hours : hours.toFixed(1)} hour${hours === 1 ? "" : "s"}`;
+}
 
 export function rebootPage(user: AppUser): string {
-  const admin = user.role === "admin" ? '<a href="/app/invitations">Invitations</a>' : "";
+  const admin =
+    user.role === "admin"
+      ? '<a href="/app/lab">Lab</a><a href="/app/invitations">Invitations</a>'
+      : "";
   return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Tonight · BoardGameEngine</title><style>${styles}</style></head><body>
 <header class="topbar"><div class="topbar-inner"><a class="brand" href="/app"><span class="die" aria-hidden="true">••<br>••</span><strong>BoardGame<span>Engine</span></strong></a><nav aria-label="Application"><a class="active" href="/app">Tonight</a><a href="/app/library">Library</a><a href="/app/account">Account</a>${admin}</nav><form action="/auth/logout" method="post"><button class="quiet" type="submit">Sign out</button></form></div></header>
 <main class="shell">
@@ -18,7 +33,7 @@ export function rebootPage(user: AppUser): string {
 <fieldset class="control players-control"><legend>Players</legend><div class="segments players" id="players"><button type="button" data-players="2">2</button><button type="button" data-players="3">3</button><button type="button" data-players="4" class="selected">4</button><button type="button" data-players="5">5</button><button type="button" data-players="6">6</button><button type="button" data-players="7">7</button><button type="button" data-players="8" data-band="8+">8+</button></div></fieldset>
 <fieldset class="control"><legend>Complexity</legend><div class="segments weights" id="weights"><button type="button" data-min="0" data-max="2">Light</button><button type="button" data-min="2" data-max="3.25" class="selected">Medium</button><button type="button" data-min="3.25" data-max="5">Heavy</button><button type="button" data-min="0" data-max="5">Any</button></div></fieldset>
 <fieldset class="control"><legend>Table style</legend><div class="segments modes" id="modes"><button type="button" data-mode="any" class="selected">Either</button><button type="button" data-mode="competitive">Competitive</button><button type="button" data-mode="cooperative">Cooperative</button></div></fieldset>
-<div class="control time-control"><label class="control-title" for="time">Time available <output id="time-output">90 min</output></label><input id="time" type="range" min="30" max="300" step="15" value="90"><div class="range-labels"><span>30 min</span><span>5 hours</span></div></div>
+<div class="control time-control"><label class="control-title" for="time">Time available <output id="time-output">${PICKER_DEFAULT_MINUTES} min</output></label><input id="time" type="range" min="${PICKER_MIN_MINUTES}" max="${PICKER_MAX_MINUTES}" step="${PICKER_MINUTE_STEP}" value="${PICKER_DEFAULT_MINUTES}"><div class="range-labels"><span>${minutesLabel(PICKER_MIN_MINUTES)}</span><span>${minutesLabel(PICKER_MAX_MINUTES)}</span></div></div>
 </div>
 <div class="form-footer"><label class="check"><input id="include-trade" type="checkbox"><span>Include games marked for trade</span></label><button class="primary find" type="submit">Pick five games</button></div>
 </form><p class="error" id="picker-error" role="alert"></p>

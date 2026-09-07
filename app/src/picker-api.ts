@@ -2,9 +2,12 @@ import { Hono } from "hono";
 import { getCookie } from "hono/cookie";
 import { loadSessionUser } from "./auth";
 import {
+  PICKER_MAX_MINUTES,
+  PICKER_MIN_MINUTES,
   recommend,
   recommendWithPolicy,
   RECOMMENDATION_POLICIES,
+  RELAXATION_MINUTE_STEPS,
   type Candidate,
   type RecommendationPolicyName
 } from "./domain";
@@ -198,8 +201,11 @@ export function validatePicker(
     maxWeight = Number(body.maxWeight);
   if (!Number.isInteger(players) || players < 1 || players > 20)
     return { ok: false, error: "Player count must be between 1 and 20" };
-  if (!Number.isFinite(minutes) || minutes < 15 || minutes > 720)
-    return { ok: false, error: "Available time must be between 15 and 720 minutes" };
+  if (!Number.isFinite(minutes) || minutes < PICKER_MIN_MINUTES || minutes > PICKER_MAX_MINUTES)
+    return {
+      ok: false,
+      error: `Available time must be between ${PICKER_MIN_MINUTES} and ${PICKER_MAX_MINUTES} minutes`
+    };
   if (
     !Number.isFinite(minWeight) ||
     !Number.isFinite(maxWeight) ||
@@ -246,7 +252,7 @@ export function suggestRelaxations(rows: PickerRow[], input: ValidPicker): strin
     ).length,
     suggestions: { added: number; text: string }[] = [];
   const currentFiltered = applyCollectionFilters(rows, input.includeForTrade, input.mode);
-  for (const threshold of [60, 90, 120, 150, 180, 240, 300, 360, 480, 720]) {
+  for (const threshold of RELAXATION_MINUTE_STEPS) {
     if (threshold <= input.minutes) continue;
     const count = eligibleRows(currentFiltered, { ...input, minutes: threshold }).length,
       added = count - baseline;

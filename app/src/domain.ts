@@ -10,6 +10,23 @@ export function allocate(total: number, weights: number[]): number[] {
   return base;
 }
 
+/**
+ * The one definition of how much table time the picker supports.
+ *
+ * The slider, the request validator and the relaxation ladder all derive from
+ * these. They used to disagree: the slider offered 30–300 minutes, the validator
+ * accepted 15–720, and the relaxation ladder went to 720 — so at 300 minutes the
+ * picker could suggest "Allow 360 minutes", which the UI had no way to request.
+ */
+export const PICKER_MIN_MINUTES = 30;
+export const PICKER_MAX_MINUTES = 360;
+export const PICKER_MINUTE_STEP = 15;
+export const PICKER_DEFAULT_MINUTES = 90;
+/** Candidate ceilings offered when too few games qualify, all reachable from the slider. */
+export const RELAXATION_MINUTE_STEPS = [45, 60, 90, 120, 150, 180, 240, 300, 360].filter(
+  (minutes) => minutes >= PICKER_MIN_MINUTES && minutes <= PICKER_MAX_MINUTES
+);
+
 export type Candidate = {
   id: number;
   name: string;

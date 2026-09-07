@@ -59,6 +59,18 @@ const textValue = (body: string, tag: string) => {
   return raw === undefined ? null : decodeXml(raw.trim());
 };
 
+/*
+ * BGG's XML API2 responses are parsed with regular expressions rather than a real
+ * XML parser. This is deliberate but worth knowing about: the Workers runtime has
+ * no DOMParser and no built-in XML parser, and pulling one in would add the only
+ * runtime dependency besides hono.
+ *
+ * It holds because the shapes we read are flat — <item> elements never nest inside
+ * one another in thing/collection/search responses, and the fields we want are
+ * attributes or single-level text. It would break on nested <item> elements or on
+ * CDATA sections, so any parse change should be checked against
+ * fixtures/thing-sample.xml first.
+ */
 export function parseThingXml(xml: string): BggThing[] {
   return [...xml.matchAll(/<item\b([^>]*)>([\s\S]*?)<\/item>/g)].map((match) => {
     const head = match[1],

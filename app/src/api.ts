@@ -2,7 +2,7 @@ import { Hono } from "hono";
 import { getCookie } from "hono/cookie";
 import { isEmail, loadSessionUser, normalizeEmail } from "./auth";
 import { mapCollectionCsv, type ImportRow } from "./csv";
-import { allocate, matchLocal, recommend, type Candidate } from "./domain";
+import { allocate, matchLocal } from "./domain";
 import { sendInvitationEmail } from "./email";
 type B = { DB: D1Database; EMAIL_FROM: string; RESEND_API_KEY: string };
 type U = { id: string; email: string; role: string };
@@ -596,16 +596,6 @@ api.get("/trades/export", async (c) => {
   return c.text((format === "csv" ? "name,condition\n" : "") + lines.join("\n"), 200, {
     "Content-Type": format === "csv" ? "text/csv" : "text/plain"
   });
-});
-api.post("/recommend", async (c) => {
-  const b = await c.req.json<{
-    players: number;
-    minutes: number;
-    minWeight: number;
-    maxWeight: number;
-    candidates: Candidate[];
-  }>();
-  return c.json(recommend(b.candidates, b.players, b.minutes, b.minWeight, b.maxWeight));
 });
 api.post("/match", async (c) => {
   const u = c.get("user"),
