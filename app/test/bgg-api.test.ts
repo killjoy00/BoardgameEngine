@@ -4,6 +4,7 @@ import {
   claimRunLease,
   claimSyncStartLease,
   collectionItemId,
+  extendBggBackoff,
   normalizeUsername,
   runBackgroundSync,
   type EnrichOutcome
@@ -18,10 +19,11 @@ function dbWithRunningRuns(rows: { id: string; userId: string }[]) {
 
 /**
  * Stateful D1 stand-in for the singleton app-wide request gate. Conditional writes
- * see the latest shared timestamp, while per-account timestamps are only telemetry.
+ * see the latest shared pacing/backoff state, while per-account timestamps are only telemetry.
  */
 function dbWithAtomicSlot(initialLastRequestAt: string | null = null) {
   let gateLastRequestAt = initialLastRequestAt;
+  let gateBlockedUntil: string | null = null;
   const gateUpdates: string[] = [];
   const accountUpdates: string[] = [];
   const db = {
@@ -35,12 +37,20 @@ function dbWithAtomicSlot(initialLastRequestAt: string | null = null) {
         async run() {
           if (sql.startsWith("UPDATE bgg_request_gate SET last_request_at")) {
             gateUpdates.push(sql);
-            const [nowIso, cutoff] = args as [string, string];
-            if (gateLastRequestAt === null || gateLastRequestAt <= cutoff) {
+            const [nowIso, allowedAt, cutoff] = args as [string, string, string];
+            if (
+              (gateBlockedUntil === null || gateBlockedUntil <= allowedAt) &&
+              (gateLastRequestAt === null || gateLastRequestAt <= cutoff)
+            ) {
               gateLastRequestAt = nowIso;
               return { meta: { changes: 1 } };
             }
             return { meta: { changes: 0 } };
+          }
+          if (sql.startsWith("UPDATE bgg_request_gate SET blocked_until")) {
+            const [until] = args as [string, string];
+            if (gateBlockedUntil === null || gateBlockedUntil < until) gateBlockedUntil = until;
+            return { meta: { changes: 1 } };
           }
           if (sql.startsWith("UPDATE source_accounts SET last_request_at")) {
             accountUpdates.push(String(args[2]));
@@ -50,7 +60,7 @@ function dbWithAtomicSlot(initialLastRequestAt: string | null = null) {
         },
         async first() {
           if (sql.startsWith("SELECT last_request_at")) {
-            return { lastRequestAt: gateLastRequestAt };
+            return { lastRequestAt: gateLastRequestAt, blockedUntil: gateBlockedUntil };
           }
           return null;
         }
@@ -180,6 +190,18 @@ describe("BGG sync API helpers", () => {
     expect(gateUpdates[0]).toContain("UPDATE bgg_request_gate");
     expect(accountUpdates).toHaveLength(1);
     expect(await claimBggSlot(db, "account-2", new Date(now.getTime() + 5000))).toBe(0);
+    expect(accountUpdates).toHaveLength(2);
+  });
+
+  it("holds every account through a longer BGG server backoff", async () => {
+    const { db, accountUpdates } = dbWithAtomicSlot();
+    const now = new Date("2026-09-07T16:30:00.000Z");
+    expect(await claimBggSlot(db, "account-1", now)).toBe(0);
+    await extendBggBackoff(db, 12_000, now);
+
+    expect(await claimBggSlot(db, "account-2", new Date(now.getTime() + 5000))).toBe(7000);
+    expect(accountUpdates).toHaveLength(1);
+    expect(await claimBggSlot(db, "account-2", new Date(now.getTime() + 12_000))).toBe(0);
     expect(accountUpdates).toHaveLength(2);
   });
 
