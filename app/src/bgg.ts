@@ -32,6 +32,7 @@ export type BggClientOptions = {
   wait?: (ms: number) => Promise<void>;
   minIntervalMs?: number;
   now?: () => number;
+  beforeAttempt?: (attempt: number) => void | Promise<void>;
   onAttempt?: (status: number, attempt: number) => void | Promise<void>;
 };
 
@@ -166,11 +167,23 @@ export async function fetchWithBackoff(
   wait = (ms: number) => new Promise<void>((r) => setTimeout(r, ms)),
   attempts = 5,
   intervalMs = DEFAULT_INTERVAL_MS,
-  onAttempt?: (status: number, attempt: number) => void | Promise<void>
+  onAttempt?: (status: number, attempt: number) => void | Promise<void>,
+  beforeAttempt?: (attempt: number) => void | Promise<void>
 ): Promise<Response> {
   let last: Response | null = null;
   for (let i = 0; i < attempts; i++) {
-    const response = await fetcher();
+    await beforeAttempt?.(i + 1);
+    let response: Response;
+    try {
+      response = await fetcher();
+    } catch (error) {
+      await onAttempt?.(0, i + 1);
+      if (i < attempts - 1) {
+        await wait(intervalMs);
+        continue;
+      }
+      throw error;
+    }
     last = response;
     await onAttempt?.(response.status, i + 1);
     if (!RETRYABLE.has(response.status)) return response;
@@ -187,6 +200,7 @@ export class BggClient {
   private readonly wait: (ms: number) => Promise<void>;
   private readonly minIntervalMs: number;
   private readonly now: () => number;
+  private readonly beforeAttempt?: BggClientOptions["beforeAttempt"];
   private readonly onAttempt?: BggClientOptions["onAttempt"];
   constructor(
     private readonly token: string,
@@ -197,6 +211,7 @@ export class BggClient {
     this.wait = options.wait ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
     this.minIntervalMs = options.minIntervalMs ?? DEFAULT_INTERVAL_MS;
     this.now = options.now ?? Date.now;
+    this.beforeAttempt = options.beforeAttempt;
     this.onAttempt = options.onAttempt;
   }
   async collection(
@@ -231,7 +246,8 @@ export class BggClient {
         this.wait,
         5,
         this.minIntervalMs,
-        this.onAttempt
+        this.onAttempt,
+        this.beforeAttempt
       );
     if (!response.ok) throw new Error(`BGG ${path} request failed with HTTP ${response.status}`);
     return response.text();

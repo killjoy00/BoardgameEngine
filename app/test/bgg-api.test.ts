@@ -15,13 +15,13 @@ function dbWithRunningRuns(rows: { id: string; userId: string }[]) {
 }
 
 /**
- * Small stateful D1 stand-in for the request-slot compare-and-set. The conditional
- * update is evaluated against the latest shared timestamp, just as SQLite does for
- * serialized writes, so two callers can exercise the race in one Promise.all.
+ * Stateful D1 stand-in for the singleton app-wide request gate. Conditional writes
+ * see the latest shared timestamp, while per-account timestamps are only telemetry.
  */
 function dbWithAtomicSlot(initialLastRequestAt: string | null = null) {
-  let lastRequestAt = initialLastRequestAt;
-  const updateSql: string[] = [];
+  let gateLastRequestAt = initialLastRequestAt;
+  const gateUpdates: string[] = [];
+  const accountUpdates: string[] = [];
   const db = {
     prepare(sql: string) {
       let args: unknown[] = [];
@@ -31,30 +31,31 @@ function dbWithAtomicSlot(initialLastRequestAt: string | null = null) {
           return this;
         },
         async run() {
-          if (sql.startsWith("UPDATE source_accounts SET last_request_at")) {
-            updateSql.push(sql);
-            const [nowIso, _updatedAt, accountId, cutoff] = args as [
-              string,
-              string,
-              string,
-              string
-            ];
-            if (accountId === "account-1" && (lastRequestAt === null || lastRequestAt <= cutoff)) {
-              lastRequestAt = nowIso;
+          if (sql.startsWith("UPDATE bgg_request_gate SET last_request_at")) {
+            gateUpdates.push(sql);
+            const [nowIso, cutoff] = args as [string, string];
+            if (gateLastRequestAt === null || gateLastRequestAt <= cutoff) {
+              gateLastRequestAt = nowIso;
               return { meta: { changes: 1 } };
             }
             return { meta: { changes: 0 } };
           }
+          if (sql.startsWith("UPDATE source_accounts SET last_request_at")) {
+            accountUpdates.push(String(args[2]));
+            return { meta: { changes: 1 } };
+          }
           return { meta: { changes: 0 } };
         },
         async first() {
-          if (sql.startsWith("SELECT last_request_at")) return { lastRequestAt };
+          if (sql.startsWith("SELECT last_request_at")) {
+            return { lastRequestAt: gateLastRequestAt };
+          }
           return null;
         }
       };
     }
   } as unknown as D1Database;
-  return { db, updateSql };
+  return { db, gateUpdates, accountUpdates };
 }
 
 const progressed = (status: string): EnrichOutcome => ({
@@ -74,17 +75,19 @@ describe("BGG sync API helpers", () => {
     expect(normalizeUsername("bad\nname")).toBeNull();
   });
 
-  it("atomically gives a concurrent BGG request slot to exactly one caller", async () => {
-    const { db, updateSql } = dbWithAtomicSlot();
+  it("atomically gives the shared BGG token slot to exactly one account", async () => {
+    const { db, gateUpdates, accountUpdates } = dbWithAtomicSlot();
     const now = new Date("2026-09-07T16:30:00.000Z");
     const results = await Promise.all([
       claimBggSlot(db, "account-1", now),
-      claimBggSlot(db, "account-1", now)
+      claimBggSlot(db, "account-2", now)
     ]);
 
     expect(results.sort((a, b) => a - b)).toEqual([0, 5000]);
-    expect(updateSql[0]).toContain("last_request_at IS NULL OR last_request_at<=?");
-    expect(await claimBggSlot(db, "account-1", new Date(now.getTime() + 5000))).toBe(0);
+    expect(gateUpdates[0]).toContain("UPDATE bgg_request_gate");
+    expect(accountUpdates).toHaveLength(1);
+    expect(await claimBggSlot(db, "account-2", new Date(now.getTime() + 5000))).toBe(0);
+    expect(accountUpdates).toHaveLength(2);
   });
 });
 
@@ -132,7 +135,7 @@ describe("background sync sweep", () => {
     expect(result.completed).toBe(0);
   });
 
-  it("yields a run that is already being driven by an open browser tab", async () => {
+  it("yields a run when another caller owns the shared BGG token slot", async () => {
     const { now, wait } = clock();
     let calls = 0;
     const result = await runBackgroundSync(
@@ -148,7 +151,7 @@ describe("background sync sweep", () => {
         }
       }
     );
-    // Retries once, then leaves the account to whoever holds the slot.
+    // Retries once, then leaves the run for the next sweep.
     expect(calls).toBe(2);
     expect(result.steps).toBe(2);
   });

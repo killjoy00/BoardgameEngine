@@ -95,6 +95,9 @@ api.post("/sync/start", async (c) => {
     items: BggCollectionItem[];
   try {
     items = await new BggClient(c.env.BGG_API_TOKEN, {
+      beforeAttempt: async (attempt) => {
+        if (attempt > 1) await waitForBggSlot(c.env.DB, account.id);
+      },
       onAttempt: (_status, attempt) => {
         attempts++;
         if (attempt > 1) retries++;
@@ -291,6 +294,9 @@ export async function enrichStep(
     things: BggThing[];
   try {
     things = await new BggClient(bggToken, {
+      beforeAttempt: async (attempt) => {
+        if (attempt > 1) await waitForBggSlot(db, run.sourceAccountId);
+      },
       onAttempt: (_status, attempt) => {
         attempts++;
         if (attempt > 1) retries++;
@@ -405,8 +411,9 @@ export type BackgroundSyncOptions = {
  * Drive every sync run that is still `running` forward, without a browser.
  *
  * Called from the Worker's scheduled handler so that closing the tab mid-sync no
- * longer strands a run. Steps are spaced by MIN_BGG_INTERVAL_MS globally (not just
- * per account) so that concurrent users cannot combine into a burst against BGG.
+ * longer strands a run. Steps are spaced by MIN_BGG_INTERVAL_MS, while the shared
+ * D1 request gate enforces the same interval across browser requests, cron work,
+ * different users, and retry attempts that all use the one BGG application token.
  */
 export async function runBackgroundSync(
   db: D1Database,
@@ -432,8 +439,8 @@ export async function runBackgroundSync(
     const result = await step(run.userId, run.id);
     steps++;
     if (result.outcome === "paced") {
-      // Something else — almost certainly an open browser tab — is already driving
-      // this account. Yield to it rather than competing for the same slot.
+      // Another browser, cron run, user, or retry owns the shared BGG token slot.
+      // Retry once in this sweep, then leave the work for the next cron tick.
       if (++run.paced < 2) queue.push(run);
     } else if (result.outcome === "progressed") {
       if (result.run?.status === "running") queue.push(run);
@@ -500,12 +507,11 @@ function withDuration(run: SyncRun | null) {
 }
 
 /**
- * Atomically reserve the next BGG request slot for one linked account.
+ * Atomically reserve the next HTTP request slot for the one BGG application token.
  *
- * Browser and cron enrichment can race each other. The old implementation checked
- * a previously-read last_request_at and then updated it separately, so two callers
- * could both decide the slot was free. This conditional UPDATE makes the check and
- * claim one D1 write: exactly one concurrent caller can advance the timestamp.
+ * The gate lives in its own singleton D1 row, so browser/cron work for different
+ * linked accounts cannot combine into a burst. source_accounts.last_request_at is
+ * still updated for per-account diagnostics but is no longer the lock itself.
  */
 export async function claimBggSlot(
   db: D1Database,
@@ -517,17 +523,22 @@ export async function claimBggSlot(
     cutoff = new Date(nowMs - MIN_BGG_INTERVAL_MS).toISOString();
   const claimed = await db
     .prepare(
-      "UPDATE source_accounts SET last_request_at=?,updated_at=? WHERE id=? AND (last_request_at IS NULL OR last_request_at<=?)"
+      "UPDATE bgg_request_gate SET last_request_at=? WHERE id='global' AND (last_request_at IS NULL OR last_request_at<=?)"
     )
-    .bind(nowIso, nowIso, accountId, cutoff)
+    .bind(nowIso, cutoff)
     .run();
-  if (Number(claimed.meta.changes ?? 0) > 0) return 0;
+  if (Number(claimed.meta.changes ?? 0) > 0) {
+    await db
+      .prepare("UPDATE source_accounts SET last_request_at=?,updated_at=? WHERE id=?")
+      .bind(nowIso, nowIso, accountId)
+      .run();
+    return 0;
+  }
 
-  // Another caller won the conditional update. Read its timestamp only to tell the
-  // loser how long to wait; this read is not part of the correctness boundary.
+  // Another caller won the conditional update. Read the shared timestamp only to
+  // tell the loser how long to wait; this read is not part of the lock boundary.
   const current = await db
-    .prepare("SELECT last_request_at lastRequestAt FROM source_accounts WHERE id=?")
-    .bind(accountId)
+    .prepare("SELECT last_request_at lastRequestAt FROM bgg_request_gate WHERE id='global'")
     .first<{ lastRequestAt: string | null }>();
   if (!current?.lastRequestAt) return MIN_BGG_INTERVAL_MS;
   const elapsed = nowMs - Date.parse(current.lastRequestAt);
@@ -535,6 +546,15 @@ export async function claimBggSlot(
     ? Math.max(1, MIN_BGG_INTERVAL_MS - elapsed)
     : MIN_BGG_INTERVAL_MS;
 }
+
+async function waitForBggSlot(db: D1Database, accountId: string): Promise<void> {
+  let retryAfterMs = await claimBggSlot(db, accountId);
+  while (retryAfterMs > 0) {
+    await new Promise<void>((resolve) => setTimeout(resolve, retryAfterMs));
+    retryAfterMs = await claimBggSlot(db, accountId);
+  }
+}
+
 async function refreshRun(
   db: D1Database,
   userId: string,
