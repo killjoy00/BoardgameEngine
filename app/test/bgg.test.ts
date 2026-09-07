@@ -146,6 +146,7 @@ describe("BGG adapter", () => {
       { status: 200, attempt: 2 }
     ]);
   });
+  // Workers fetch respects AbortSignal; this fake stalls until the timeout abort fires.
   it("aborts hung HTTP attempts so retries cannot outlive a sync lease", async () => {
     let attempts = 0;
     const client = new BggClient("secret", {
