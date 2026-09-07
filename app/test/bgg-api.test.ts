@@ -96,7 +96,9 @@ function dbWithRunLease() {
           return { meta: { changes: 0 } };
         },
         async first() {
-          if (sql.startsWith("SELECT status,lease_until")) return { status, leaseUntil };
+          if (sql.startsWith("SELECT status,lease_until")) {
+            return { status, leaseUntil };
+          }
           return null;
         }
       };
