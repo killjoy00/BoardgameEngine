@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   claimBggSlot,
+  claimRunLease,
   collectionItemId,
   normalizeUsername,
   runBackgroundSync,
@@ -58,6 +59,58 @@ function dbWithAtomicSlot(initialLastRequestAt: string | null = null) {
   return { db, gateUpdates, accountUpdates };
 }
 
+/** Stateful D1 stand-in for one recoverable enrichment-run lease. */
+function dbWithRunLease() {
+  let status = "running";
+  let leaseToken: string | null = null;
+  let leaseUntil: string | null = null;
+  const db = {
+    prepare(sql: string) {
+      let args: unknown[] = [];
+      return {
+        bind(...values: unknown[]) {
+          args = values;
+          return this;
+        },
+        async run() {
+          if (sql.startsWith("UPDATE bgg_sync_runs SET lease_token")) {
+            const [token, until, runId, userId, nowIso] = args as [
+              string,
+              string,
+              string,
+              string,
+              string
+            ];
+            if (
+              runId === "run-1" &&
+              userId === "user-1" &&
+              status === "running" &&
+              (leaseUntil === null || leaseUntil <= nowIso)
+            ) {
+              leaseToken = token;
+              leaseUntil = until;
+              return { meta: { changes: 1 } };
+            }
+            return { meta: { changes: 0 } };
+          }
+          return { meta: { changes: 0 } };
+        },
+        async first() {
+          if (sql.startsWith("SELECT status,lease_until")) return { status, leaseUntil };
+          return null;
+        }
+      };
+    }
+  } as unknown as D1Database;
+  return {
+    db,
+    state: () => ({ status, leaseToken, leaseUntil }),
+    setStatus: (value: string) => {
+      status = value;
+    }
+  };
+}
+
 const progressed = (status: string): EnrichOutcome => ({
   outcome: "progressed",
   run: { status } as never,
@@ -88,6 +141,29 @@ describe("BGG sync API helpers", () => {
     expect(accountUpdates).toHaveLength(1);
     expect(await claimBggSlot(db, "account-2", new Date(now.getTime() + 5000))).toBe(0);
     expect(accountUpdates).toHaveLength(2);
+  });
+
+  it("lets only one driver lease a sync run and recovers an expired lease", async () => {
+    const { db, state } = dbWithRunLease();
+    const now = new Date("2026-09-07T16:30:00.000Z");
+    const [first, second] = await Promise.all([
+      claimRunLease(db, "user-1", "run-1", now),
+      claimRunLease(db, "user-1", "run-1", now)
+    ]);
+
+    const outcomes = [first.outcome, second.outcome].sort();
+    expect(outcomes).toEqual(["busy", "claimed"]);
+    expect(state().leaseToken).toBeTruthy();
+    const busy = first.outcome === "busy" ? first : second;
+    expect(busy).toMatchObject({ outcome: "busy", retryAfterMs: 5000 });
+
+    const recovered = await claimRunLease(
+      db,
+      "user-1",
+      "run-1",
+      new Date(now.getTime() + 120_000)
+    );
+    expect(recovered.outcome).toBe("claimed");
   });
 });
 
