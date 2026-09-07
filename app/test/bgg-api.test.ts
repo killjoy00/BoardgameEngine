@@ -33,16 +33,8 @@ function dbWithAtomicSlot(initialLastRequestAt: string | null = null) {
         async run() {
           if (sql.startsWith("UPDATE source_accounts SET last_request_at")) {
             updateSql.push(sql);
-            const [nowIso, _updatedAt, accountId, cutoff] = args as [
-              string,
-              string,
-              string,
-              string
-            ];
-            if (
-              accountId === "account-1" &&
-              (lastRequestAt === null || lastRequestAt <= cutoff)
-            ) {
+            const [nowIso, _updatedAt, accountId, cutoff] = args as [string, string, string, string];
+            if (accountId === "account-1" && (lastRequestAt === null || lastRequestAt <= cutoff)) {
               lastRequestAt = nowIso;
               return { meta: { changes: 1 } };
             }
@@ -86,9 +78,7 @@ describe("BGG sync API helpers", () => {
     ]);
 
     expect(results.sort((a, b) => a - b)).toEqual([0, 5000]);
-    expect(updateSql[0]).toContain(
-      "last_request_at IS NULL OR last_request_at<=?"
-    );
+    expect(updateSql[0]).toContain("last_request_at IS NULL OR last_request_at<=?");
     expect(await claimBggSlot(db, "account-1", new Date(now.getTime() + 5000))).toBe(0);
   });
 });
