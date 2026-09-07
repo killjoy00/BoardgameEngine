@@ -102,6 +102,19 @@ describe("session lookup", () => {
     expect(statements[1].args[1]).toBe("2026-09-25T12:00:00.000Z");
   });
 
+  it("rewrites a legacy SQLite-format last_seen_at instead of parsing it as local time", async () => {
+    const { db, statements } = fakeDb({
+      id: "user-1",
+      email: "owner@example.com",
+      role: "member",
+      lastSeenAt: "2026-08-26 11:59:00",
+      absoluteExpiresAt: "2027-09-30T12:00:00.000Z"
+    });
+    await loadSessionUser(db, "token", now);
+    expect(statements).toHaveLength(2);
+    expect(statements[1].args[0]).toBe(now.toISOString());
+  });
+
   it("does not rewrite the session row on every request", async () => {
     const { db, statements } = fakeDb({
       id: "user-1",

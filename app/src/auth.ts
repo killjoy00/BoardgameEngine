@@ -77,7 +77,10 @@ export async function loadSessionUser(
     .bind(tokenHash, now.toISOString())
     .first<SessionUser & { lastSeenAt: string | null; absoluteExpiresAt: string | null }>();
   if (!row) return null;
-  const lastSeen = row.lastSeenAt ? Date.parse(row.lastSeenAt) : NaN;
+  // Rows written before sessions carried an expiry hold a SQLite-format
+  // timestamp, which Date.parse reads as local time. Treat anything that is not
+  // ISO-8601 as stale so the row is rewritten in the canonical format.
+  const lastSeen = row.lastSeenAt?.includes("T") ? Date.parse(row.lastSeenAt) : NaN;
   if (!Number.isFinite(lastSeen) || now.getTime() - lastSeen >= SESSION_REFRESH_AFTER_MS)
     await db
       .prepare("UPDATE sessions SET last_seen_at=?,expires_at=? WHERE token_hash=?")
