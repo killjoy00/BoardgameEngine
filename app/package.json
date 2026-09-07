@@ -6,7 +6,7 @@
   "scripts": {
     "check": "npm run format:check && tsc --noEmit && vitest run",
     "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\" \"scripts/*.mjs\"",
-    "format:check": "prettier --check \"src/**/*.ts\" \"test/**/*.ts\" \"scripts/*.mjs\"",
+    "format:check": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\" \"scripts/*.mjs\" && git diff --exit-code",
     "dev": "wrangler dev",
     "deploy": "wrangler deploy"
   },
