@@ -31,4 +31,18 @@ describe("application UI", () => {
     expect(html).toContain("Counterparty");
     expect(html).toContain("Relative weight");
   });
+
+  it("uses Tonight as the primary app destination and removes the obsolete fixture picker nav", () => {
+    const html = appPage({ email: "owner@example.com", role: "admin" }, "library");
+    expect(html).toContain('<a href="/app">Tonight</a>');
+    expect(html).toContain('class="tool-tabs"');
+    expect(html).not.toContain('href="/app/picker"');
+    expect(html).not.toContain("STAGING");
+  });
+
+  it("keeps BGG attribution visible across secondary tools", () => {
+    const html = appPage({ email: "owner@example.com", role: "member" }, "account");
+    expect(html).toContain("Powered by BoardGameGeek");
+    expect(html).toContain("https://boardgamegeek.com/");
+  });
 });
