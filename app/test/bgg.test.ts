@@ -81,6 +81,47 @@ describe("BGG adapter", () => {
       { status: 200, attempt: 2 }
     ]);
   });
+  it("runs the shared request gate before every HTTP attempt", async () => {
+    let n = 0;
+    const gated: number[] = [];
+    const r = await fetchWithBackoff(
+      async () => new Response("", { status: ++n === 1 ? 503 : 200 }),
+      async () => {},
+      5,
+      0,
+      undefined,
+      (attempt) => {
+        gated.push(attempt);
+      }
+    );
+    expect(r.status).toBe(200);
+    expect(gated).toEqual([1, 2]);
+  });
+  it("retries transient network failures and records them as status zero", async () => {
+    let n = 0;
+    const waits: number[] = [];
+    const seen: { status: number; attempt: number }[] = [];
+    const r = await fetchWithBackoff(
+      async () => {
+        if (++n === 1) throw new TypeError("network unavailable");
+        return new Response("", { status: 200 });
+      },
+      async (ms) => {
+        waits.push(ms);
+      },
+      5,
+      5000,
+      (status, attempt) => {
+        seen.push({ status, attempt });
+      }
+    );
+    expect(r.status).toBe(200);
+    expect(waits).toEqual([5000]);
+    expect(seen).toEqual([
+      { status: 0, attempt: 1 },
+      { status: 200, attempt: 2 }
+    ]);
+  });
   it("sends the application token as a Bearer header", async () => {
     let auth = "";
     const client = new BggClient("secret", {
