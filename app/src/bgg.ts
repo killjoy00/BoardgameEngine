@@ -31,14 +31,17 @@ export type BggClientOptions = {
   fetcher?: typeof fetch;
   wait?: (ms: number) => Promise<void>;
   minIntervalMs?: number;
+  attemptTimeoutMs?: number;
   now?: () => number;
   beforeAttempt?: (attempt: number) => void | Promise<void>;
   onAttempt?: (status: number, attempt: number) => void | Promise<void>;
+  onBackoff?: (delayMs: number, attempt: number) => void | Promise<void>;
 };
 
 const ROOT = "https://boardgamegeek.com/xmlapi2/";
 const RETRYABLE = new Set([202, 429, 500, 502, 503, 504]);
 const DEFAULT_INTERVAL_MS = 5000;
+const DEFAULT_ATTEMPT_TIMEOUT_MS = 30_000;
 const attr = (text: string, name: string) => new RegExp(`${name}="([^"]*)"`).exec(text)?.[1] ?? "";
 const decodeXml = (value: string) =>
   value
@@ -183,7 +186,8 @@ export async function fetchWithBackoff(
   attempts = 5,
   intervalMs = DEFAULT_INTERVAL_MS,
   onAttempt?: (status: number, attempt: number) => void | Promise<void>,
-  beforeAttempt?: (attempt: number) => void | Promise<void>
+  beforeAttempt?: (attempt: number) => void | Promise<void>,
+  onBackoff?: (delayMs: number, attempt: number) => void | Promise<void>
 ): Promise<Response> {
   let last: Response | null = null;
   for (let i = 0; i < attempts; i++) {
@@ -202,7 +206,9 @@ export async function fetchWithBackoff(
     last = response;
     await onAttempt?.(response.status, i + 1);
     if (!RETRYABLE.has(response.status)) return response;
-    if (i < attempts - 1) await wait(retryDelayMs(response, intervalMs));
+    const delayMs = retryDelayMs(response, intervalMs);
+    await onBackoff?.(delayMs, i + 1);
+    if (i < attempts - 1) await wait(delayMs);
   }
   throw new Error(
     `BGG request remained unavailable after ${attempts} attempts (last status ${last?.status ?? "unknown"})`
@@ -214,9 +220,11 @@ export class BggClient {
   private readonly fetcher: typeof fetch;
   private readonly wait: (ms: number) => Promise<void>;
   private readonly minIntervalMs: number;
+  private readonly attemptTimeoutMs: number;
   private readonly now: () => number;
   private readonly beforeAttempt?: BggClientOptions["beforeAttempt"];
   private readonly onAttempt?: BggClientOptions["onAttempt"];
+  private readonly onBackoff?: BggClientOptions["onBackoff"];
   constructor(
     private readonly token: string,
     options: BggClientOptions = {}
@@ -225,9 +233,11 @@ export class BggClient {
     this.fetcher = options.fetcher ?? ((input, init) => globalThis.fetch(input, init));
     this.wait = options.wait ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
     this.minIntervalMs = options.minIntervalMs ?? DEFAULT_INTERVAL_MS;
+    this.attemptTimeoutMs = options.attemptTimeoutMs ?? DEFAULT_ATTEMPT_TIMEOUT_MS;
     this.now = options.now ?? Date.now;
     this.beforeAttempt = options.beforeAttempt;
     this.onAttempt = options.onAttempt;
+    this.onBackoff = options.onBackoff;
   }
   async collection(
     username: string,
@@ -254,18 +264,28 @@ export class BggClient {
     this.lastRequestAt = this.now();
     const url = `${ROOT}${path}?${params.toString()}`,
       response = await fetchWithBackoff(
-        () =>
-          this.fetcher(url, {
-            headers: { Authorization: `Bearer ${this.token}`, Accept: "application/xml" }
-          }),
+        () => this.fetchAttempt(url),
         this.wait,
         5,
         this.minIntervalMs,
         this.onAttempt,
-        this.beforeAttempt
+        this.beforeAttempt,
+        this.onBackoff
       );
     if (!response.ok) throw new Error(`BGG ${path} request failed with HTTP ${response.status}`);
     return response.text();
+  }
+  private async fetchAttempt(url: string): Promise<Response> {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), this.attemptTimeoutMs);
+    try {
+      return await this.fetcher(url, {
+        headers: { Authorization: `Bearer ${this.token}`, Accept: "application/xml" },
+        signal: controller.signal
+      });
+    } finally {
+      clearTimeout(timeout);
+    }
   }
 }
 
