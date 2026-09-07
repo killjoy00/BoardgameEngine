@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
+  claimBggSlot,
   collectionItemId,
   normalizeUsername,
   runBackgroundSync,
@@ -12,6 +13,53 @@ function dbWithRunningRuns(rows: { id: string; userId: string }[]) {
     prepare: () => ({ all: async () => ({ results: rows }) })
   } as unknown as D1Database;
 }
+
+/**
+ * Small stateful D1 stand-in for the request-slot compare-and-set. The conditional
+ * update is evaluated against the latest shared timestamp, just as SQLite does for
+ * serialized writes, so two callers can exercise the race in one Promise.all.
+ */
+function dbWithAtomicSlot(initialLastRequestAt: string | null = null) {
+  let lastRequestAt = initialLastRequestAt;
+  const updateSql: string[] = [];
+  const db = {
+    prepare(sql: string) {
+      let args: unknown[] = [];
+      return {
+        bind(...values: unknown[]) {
+          args = values;
+          return this;
+        },
+        async run() {
+          if (sql.startsWith("UPDATE source_accounts SET last_request_at")) {
+            updateSql.push(sql);
+            const [nowIso, _updatedAt, accountId, cutoff] = args as [
+              string,
+              string,
+              string,
+              string
+            ];
+            if (
+              accountId === "account-1" &&
+              (lastRequestAt === null || lastRequestAt <= cutoff)
+            ) {
+              lastRequestAt = nowIso;
+              return { meta: { changes: 1 } };
+            }
+            return { meta: { changes: 0 } };
+          }
+          return { meta: { changes: 0 } };
+        },
+        async first() {
+          if (sql.startsWith("SELECT last_request_at")) return { lastRequestAt };
+          return null;
+        }
+      };
+    }
+  } as unknown as D1Database;
+  return { db, updateSql };
+}
+
 const progressed = (status: string): EnrichOutcome => ({
   outcome: "progressed",
   run: { status } as never,
@@ -27,6 +75,21 @@ describe("BGG sync API helpers", () => {
     expect(normalizeUsername(" killjoy00 ")).toBe("killjoy00");
     expect(normalizeUsername("bad<name")).toBeNull();
     expect(normalizeUsername("bad\nname")).toBeNull();
+  });
+
+  it("atomically gives a concurrent BGG request slot to exactly one caller", async () => {
+    const { db, updateSql } = dbWithAtomicSlot();
+    const now = new Date("2026-09-07T16:30:00.000Z");
+    const results = await Promise.all([
+      claimBggSlot(db, "account-1", now),
+      claimBggSlot(db, "account-1", now)
+    ]);
+
+    expect(results.sort((a, b) => a - b)).toEqual([0, 5000]);
+    expect(updateSql[0]).toContain(
+      "last_request_at IS NULL OR last_request_at<=?"
+    );
+    expect(await claimBggSlot(db, "account-1", new Date(now.getTime() + 5000))).toBe(0);
   });
 });
 

@@ -84,7 +84,7 @@ api.post("/sync/start", async (c) => {
   if (!account) return c.json({ error: "Connect a BoardGameGeek username before syncing" }, 400);
   const active = await activeRun(c.env.DB, user.id);
   if (active) return c.json({ error: "A sync is already running", run: withDuration(active) }, 409);
-  const retryAfterMs = await claimBggSlot(c.env.DB, account.id, account.lastRequestAt);
+  const retryAfterMs = await claimBggSlot(c.env.DB, account.id);
   if (retryAfterMs > 0)
     return c.json(
       { error: "BoardGameGeek requests are paced to protect the API", retryAfterMs },
@@ -255,7 +255,7 @@ export async function enrichStep(
 ): Promise<EnrichOutcome> {
   const run = await db
     .prepare(
-      "SELECT r.id,r.status,r.failed_requests failedRequests,r.source_account_id sourceAccountId,sa.last_request_at lastRequestAt FROM bgg_sync_runs r JOIN source_accounts sa ON sa.id=r.source_account_id WHERE r.id=? AND r.user_id=?"
+      "SELECT id,status,failed_requests failedRequests,source_account_id sourceAccountId FROM bgg_sync_runs WHERE id=? AND user_id=?"
     )
     .bind(runId, userId)
     .first<{
@@ -263,7 +263,6 @@ export async function enrichStep(
       status: string;
       failedRequests: number;
       sourceAccountId: string;
-      lastRequestAt: string | null;
     }>();
   if (!run) return { outcome: "not-found" };
   if (run.status !== "running")
@@ -284,7 +283,7 @@ export async function enrichStep(
       run: await finalizeRun(db, userId, runId, run.sourceAccountId),
       nextRequestAfterMs: 0
     };
-  const retryAfterMs = await claimBggSlot(db, run.sourceAccountId, run.lastRequestAt);
+  const retryAfterMs = await claimBggSlot(db, run.sourceAccountId);
   if (retryAfterMs > 0) return { outcome: "paced", retryAfterMs };
   const ids = pending.results.map((row) => Number(row.bggId));
   let attempts = 0,
@@ -499,22 +498,42 @@ function withDuration(run: SyncRun | null) {
     durationMs: Number.isFinite(start) && Number.isFinite(end) ? Math.max(0, end - start) : null
   };
 }
-async function claimBggSlot(
+
+/**
+ * Atomically reserve the next BGG request slot for one linked account.
+ *
+ * Browser and cron enrichment can race each other. The old implementation checked
+ * a previously-read last_request_at and then updated it separately, so two callers
+ * could both decide the slot was free. This conditional UPDATE makes the check and
+ * claim one D1 write: exactly one concurrent caller can advance the timestamp.
+ */
+export async function claimBggSlot(
   db: D1Database,
   accountId: string,
-  lastRequestAt: string | null
+  now = new Date()
 ): Promise<number> {
-  if (lastRequestAt) {
-    const elapsed = Date.now() - Date.parse(lastRequestAt);
-    if (Number.isFinite(elapsed) && elapsed < MIN_BGG_INTERVAL_MS)
-      return MIN_BGG_INTERVAL_MS - elapsed;
-  }
-  const now = new Date().toISOString();
-  await db
-    .prepare("UPDATE source_accounts SET last_request_at=?,updated_at=? WHERE id=?")
-    .bind(now, now, accountId)
+  const nowMs = now.getTime(),
+    nowIso = now.toISOString(),
+    cutoff = new Date(nowMs - MIN_BGG_INTERVAL_MS).toISOString();
+  const claimed = await db
+    .prepare(
+      "UPDATE source_accounts SET last_request_at=?,updated_at=? WHERE id=? AND (last_request_at IS NULL OR last_request_at<=?)"
+    )
+    .bind(nowIso, nowIso, accountId, cutoff)
     .run();
-  return 0;
+  if (Number(claimed.meta.changes ?? 0) > 0) return 0;
+
+  // Another caller won the conditional update. Read its timestamp only to tell the
+  // loser how long to wait; this read is not part of the correctness boundary.
+  const current = await db
+    .prepare("SELECT last_request_at lastRequestAt FROM source_accounts WHERE id=?")
+    .bind(accountId)
+    .first<{ lastRequestAt: string | null }>();
+  if (!current?.lastRequestAt) return MIN_BGG_INTERVAL_MS;
+  const elapsed = nowMs - Date.parse(current.lastRequestAt);
+  return Number.isFinite(elapsed) && elapsed >= 0
+    ? Math.max(1, MIN_BGG_INTERVAL_MS - elapsed)
+    : MIN_BGG_INTERVAL_MS;
 }
 async function refreshRun(
   db: D1Database,
