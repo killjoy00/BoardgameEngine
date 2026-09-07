@@ -123,6 +123,15 @@ api.post("/sync/start", async (c) => {
         onAttempt: (_status, attempt) => {
           attempts++;
           if (attempt > 1) retries++;
+        },
+        onBackoff: async (delayMs) => {
+          await extendBggBackoff(c.env.DB, delayMs);
+          await renewSyncStartLease(
+            c.env.DB,
+            account.id,
+            startLease.token,
+            delayMs + MIN_BGG_INTERVAL_MS
+          );
         }
       }).collection(account.username, { own: 1, excludesubtype: "boardgameexpansion" });
     } catch (error) {
@@ -347,6 +356,16 @@ export async function enrichStep(
         onAttempt: (_status, attempt) => {
           attempts++;
           if (attempt > 1) retries++;
+        },
+        onBackoff: async (delayMs) => {
+          await extendBggBackoff(db, delayMs);
+          await renewRunLease(
+            db,
+            userId,
+            runId,
+            lease.token,
+            delayMs + MIN_BGG_INTERVAL_MS
+          );
         }
       }).things(ids);
     } catch (error) {
@@ -560,8 +579,8 @@ function withDuration(run: SyncRun | null) {
  * Atomically reserve the next HTTP request slot for the one BGG application token.
  *
  * The gate lives in its own singleton D1 row, so browser/cron work for different
- * linked accounts cannot combine into a burst. source_accounts.last_request_at is
- * still updated for per-account diagnostics but is no longer the lock itself.
+ * linked accounts cannot combine into a burst. It also observes any longer
+ * Retry-After cooldown BGG has asked the shared token to honor.
  */
 export async function claimBggSlot(
   db: D1Database,
@@ -573,9 +592,9 @@ export async function claimBggSlot(
     cutoff = new Date(nowMs - MIN_BGG_INTERVAL_MS).toISOString();
   const claimed = await db
     .prepare(
-      "UPDATE bgg_request_gate SET last_request_at=? WHERE id='global' AND (last_request_at IS NULL OR last_request_at<=?)"
+      "UPDATE bgg_request_gate SET last_request_at=? WHERE id='global' AND (blocked_until IS NULL OR blocked_until<=?) AND (last_request_at IS NULL OR last_request_at<=?)"
     )
-    .bind(nowIso, cutoff)
+    .bind(nowIso, nowIso, cutoff)
     .run();
   if (Number(claimed.meta.changes ?? 0) > 0) {
     await db
@@ -585,16 +604,34 @@ export async function claimBggSlot(
     return 0;
   }
 
-  // Another caller won the conditional update. Read the shared timestamp only to
-  // tell the loser how long to wait; this read is not part of the lock boundary.
+  // Another caller or server-requested cooldown owns the shared slot. These reads
+  // only calculate a retry hint; the conditional UPDATE above is the lock boundary.
   const current = await db
-    .prepare("SELECT last_request_at lastRequestAt FROM bgg_request_gate WHERE id='global'")
-    .first<{ lastRequestAt: string | null }>();
-  if (!current?.lastRequestAt) return MIN_BGG_INTERVAL_MS;
-  const elapsed = nowMs - Date.parse(current.lastRequestAt);
-  return Number.isFinite(elapsed) && elapsed >= 0
-    ? Math.max(1, MIN_BGG_INTERVAL_MS - elapsed)
-    : MIN_BGG_INTERVAL_MS;
+    .prepare(
+      "SELECT last_request_at lastRequestAt,blocked_until blockedUntil FROM bgg_request_gate WHERE id='global'"
+    )
+    .first<{ lastRequestAt: string | null; blockedUntil: string | null }>();
+  const pacingRemaining = current?.lastRequestAt
+      ? MIN_BGG_INTERVAL_MS - (nowMs - Date.parse(current.lastRequestAt))
+      : 0,
+    blockedRemaining = current?.blockedUntil ? Date.parse(current.blockedUntil) - nowMs : 0,
+    remaining = Math.max(pacingRemaining, blockedRemaining);
+  return Number.isFinite(remaining) ? Math.max(1, remaining) : MIN_BGG_INTERVAL_MS;
+}
+
+/** Extend the shared token cooldown when BGG explicitly asks us to back off. */
+export async function extendBggBackoff(
+  db: D1Database,
+  delayMs: number,
+  now = new Date()
+): Promise<void> {
+  const until = new Date(now.getTime() + Math.max(MIN_BGG_INTERVAL_MS, delayMs)).toISOString();
+  await db
+    .prepare(
+      "UPDATE bgg_request_gate SET blocked_until=CASE WHEN blocked_until IS NULL OR blocked_until<? THEN ? ELSE blocked_until END WHERE id='global'"
+    )
+    .bind(until, until)
+    .run();
 }
 
 async function waitForBggSlot(db: D1Database, accountId: string): Promise<void> {
@@ -645,9 +682,10 @@ export async function claimSyncStartLease(
 async function renewSyncStartLease(
   db: D1Database,
   accountId: string,
-  token: string
+  token: string,
+  minimumMs = SYNC_START_LEASE_MS
 ): Promise<void> {
-  const leaseUntil = new Date(Date.now() + SYNC_START_LEASE_MS).toISOString();
+  const leaseUntil = new Date(Date.now() + Math.max(SYNC_START_LEASE_MS, minimumMs)).toISOString();
   await db
     .prepare("UPDATE source_accounts SET sync_start_until=? WHERE id=? AND sync_start_token=?")
     .bind(leaseUntil, accountId, token)
@@ -708,9 +746,10 @@ async function renewRunLease(
   db: D1Database,
   userId: string,
   runId: string,
-  token: string
+  token: string,
+  minimumMs = RUN_LEASE_MS
 ): Promise<void> {
-  const leaseUntil = new Date(Date.now() + RUN_LEASE_MS).toISOString();
+  const leaseUntil = new Date(Date.now() + Math.max(RUN_LEASE_MS, minimumMs)).toISOString();
   await db
     .prepare(
       "UPDATE bgg_sync_runs SET lease_until=? WHERE id=? AND user_id=? AND status='running' AND lease_token=?"

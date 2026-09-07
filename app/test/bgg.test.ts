@@ -63,9 +63,10 @@ describe("BGG adapter", () => {
     expect(r.status).toBe(200);
     expect(waits).toEqual([5000, 5000]);
   });
-  it("honors a longer Retry-After response from BGG", async () => {
+  it("honors and reports a longer Retry-After response from BGG", async () => {
     let n = 0;
     const waits: number[] = [];
+    const backoffs: { delayMs: number; attempt: number }[] = [];
     const r = await fetchWithBackoff(
       async () =>
         ++n === 1
@@ -73,10 +74,18 @@ describe("BGG adapter", () => {
           : new Response("", { status: 200 }),
       async (ms) => {
         waits.push(ms);
+      },
+      5,
+      5000,
+      undefined,
+      undefined,
+      (delayMs, attempt) => {
+        backoffs.push({ delayMs, attempt });
       }
     );
     expect(r.status).toBe(200);
     expect(waits).toEqual([12_000]);
+    expect(backoffs).toEqual([{ delayMs: 12_000, attempt: 1 }]);
   });
   it("reports each HTTP attempt without exposing request content", async () => {
     let n = 0;
@@ -136,6 +145,25 @@ describe("BGG adapter", () => {
       { status: 0, attempt: 1 },
       { status: 200, attempt: 2 }
     ]);
+  });
+  it("aborts hung HTTP attempts so retries cannot outlive a sync lease", async () => {
+    let attempts = 0;
+    const client = new BggClient("secret", {
+      minIntervalMs: 0,
+      attemptTimeoutMs: 5,
+      wait: async () => {},
+      fetcher: (_input, init) => {
+        attempts++;
+        return new Promise<Response>((_resolve, reject) => {
+          if (!init?.signal) return reject(new Error("missing abort signal"));
+          init.signal.addEventListener("abort", () => reject(new Error("request timed out")), {
+            once: true
+          });
+        });
+      }
+    });
+    await expect(client.search("A", true)).rejects.toThrow("request timed out");
+    expect(attempts).toBe(5);
   });
   it("sends the application token as a Bearer header", async () => {
     let auth = "";
