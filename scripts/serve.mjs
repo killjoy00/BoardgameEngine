@@ -18,7 +18,9 @@ createServer((request, response) => {
 
   try {
     if (!statSync(file).isFile()) throw new Error("Not a file");
-    response.writeHead(200, { "Content-Type": `${types[extname(file)] || "application/octet-stream"}; charset=utf-8` });
+    response.writeHead(200, {
+      "Content-Type": `${types[extname(file)] || "application/octet-stream"}; charset=utf-8`
+    });
     createReadStream(file).pipe(response);
   } catch {
     response.writeHead(404, { "Content-Type": "text/plain; charset=utf-8" }).end("Not found");

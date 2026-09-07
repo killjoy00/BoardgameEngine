@@ -1,8 +1,140 @@
-import{describe,it,expect}from"vitest";
-import{collectionItemId,normalizeUsername}from"../src/bgg-api";
+import { describe, it, expect } from "vitest";
+import {
+  collectionItemId,
+  normalizeUsername,
+  runBackgroundSync,
+  type EnrichOutcome
+} from "../src/bgg-api";
 
-describe("BGG sync API helpers",()=>{
-  it("keeps the BGG collection id stable so API sync reconciles CSV imports",()=>expect(collectionItemId("user-1",{id:432,collId:"8139458"})).toBe("user-1:8139458"));
-  it("falls back to the BGG id when a collection id is unavailable",()=>expect(collectionItemId("user-1",{id:432,collId:""})).toBe("user-1:432"));
-  it("accepts normal BGG usernames and rejects control or markup characters",()=>{expect(normalizeUsername(" killjoy00 ")).toBe("killjoy00");expect(normalizeUsername("bad<name")).toBeNull();expect(normalizeUsername("bad\nname")).toBeNull()});
+/** Minimal D1 stand-in: the sweep only queries for runs that are still in flight. */
+function dbWithRunningRuns(rows: { id: string; userId: string }[]) {
+  return {
+    prepare: () => ({ all: async () => ({ results: rows }) })
+  } as unknown as D1Database;
+}
+const progressed = (status: string): EnrichOutcome => ({
+  outcome: "progressed",
+  run: { status } as never,
+  nextRequestAfterMs: 0
+});
+
+describe("BGG sync API helpers", () => {
+  it("keeps the BGG collection id stable so API sync reconciles CSV imports", () =>
+    expect(collectionItemId("user-1", { id: 432, collId: "8139458" })).toBe("user-1:8139458"));
+  it("falls back to the BGG id when a collection id is unavailable", () =>
+    expect(collectionItemId("user-1", { id: 432, collId: "" })).toBe("user-1:432"));
+  it("accepts normal BGG usernames and rejects control or markup characters", () => {
+    expect(normalizeUsername(" killjoy00 ")).toBe("killjoy00");
+    expect(normalizeUsername("bad<name")).toBeNull();
+    expect(normalizeUsername("bad\nname")).toBeNull();
+  });
+});
+
+describe("background sync sweep", () => {
+  const clock = () => {
+    let time = 0;
+    return {
+      now: () => time,
+      wait: async (ms: number) => {
+        time += ms;
+      }
+    };
+  };
+
+  it("drives a run until it stops reporting as running", async () => {
+    const { now, wait } = clock();
+    let calls = 0;
+    const result = await runBackgroundSync(
+      dbWithRunningRuns([{ id: "run-1", userId: "user-1" }]),
+      "token",
+      {
+        budgetMs: 60_000,
+        now,
+        wait,
+        step: async () => progressed(++calls < 3 ? "running" : "complete")
+      }
+    );
+    expect(result).toEqual({ runs: 1, steps: 3, completed: 1 });
+  });
+
+  it("stops once the wall-clock budget is spent instead of overrunning the next tick", async () => {
+    const { now, wait } = clock();
+    const result = await runBackgroundSync(
+      dbWithRunningRuns([{ id: "run-1", userId: "user-1" }]),
+      "token",
+      {
+        budgetMs: 12_000,
+        now,
+        wait,
+        step: async () => progressed("running")
+      }
+    );
+    // 5s of pacing per step, so only two steps fit inside a 12s budget.
+    expect(result.steps).toBe(2);
+    expect(result.completed).toBe(0);
+  });
+
+  it("yields a run that is already being driven by an open browser tab", async () => {
+    const { now, wait } = clock();
+    let calls = 0;
+    const result = await runBackgroundSync(
+      dbWithRunningRuns([{ id: "run-1", userId: "user-1" }]),
+      "token",
+      {
+        budgetMs: 60_000,
+        now,
+        wait,
+        step: async () => {
+          calls++;
+          return { outcome: "paced", retryAfterMs: 4000 };
+        }
+      }
+    );
+    // Retries once, then leaves the account to whoever holds the slot.
+    expect(calls).toBe(2);
+    expect(result.steps).toBe(2);
+  });
+
+  it("interleaves runs from different users rather than draining one first", async () => {
+    const { now, wait } = clock();
+    const seen: string[] = [];
+    const remaining: Record<string, number> = { "run-1": 2, "run-2": 2 };
+    await runBackgroundSync(
+      dbWithRunningRuns([
+        { id: "run-1", userId: "user-1" },
+        { id: "run-2", userId: "user-2" }
+      ]),
+      "token",
+      {
+        budgetMs: 60_000,
+        now,
+        wait,
+        step: async (_userId, runId) => {
+          seen.push(runId);
+          return progressed(--remaining[runId] > 0 ? "running" : "complete");
+        }
+      }
+    );
+    expect(seen).toEqual(["run-1", "run-2", "run-1", "run-2"]);
+  });
+
+  it("abandons a run that keeps failing against BGG instead of retrying it forever", async () => {
+    const { now, wait } = clock();
+    let calls = 0;
+    const result = await runBackgroundSync(
+      dbWithRunningRuns([{ id: "run-1", userId: "user-1" }]),
+      "token",
+      {
+        budgetMs: 60_000,
+        now,
+        wait,
+        step: async () => {
+          calls++;
+          return { outcome: "bgg-error", error: "BGG unavailable" };
+        }
+      }
+    );
+    expect(calls).toBe(1);
+    expect(result.completed).toBe(0);
+  });
 });

@@ -1,22 +1,42 @@
 import { Hono, type Context } from "hono";
 import { getCookie, setCookie } from "hono/cookie";
-import { expiresIn, hash, isEmail, LOGIN_TOKEN_MINUTES, normalizeEmail, randomCode, randomToken } from "./auth";
+import {
+  expiresIn,
+  hash,
+  isEmail,
+  loadSessionUser,
+  LOGIN_TOKEN_MINUTES,
+  newSessionWindow,
+  normalizeEmail,
+  randomCode,
+  randomToken,
+  SESSION_ABSOLUTE_DAYS
+} from "./auth";
 import { sendSignInEmail } from "./email";
 import { appPage, confirmPage, signInPage, type AppUser } from "./ui";
 import { rebootPage } from "./reboot-ui";
 import { recommendationLabPage } from "./lab-ui";
 import api from "./api";
-import bggApi from "./bgg-api";
+import bggApi, { runBackgroundSync } from "./bgg-api";
 import pickerApi from "./picker-api";
 
-type Bindings = { DB: D1Database; EMAIL_FROM: string; RESEND_API_KEY: string; BGG_API_TOKEN: string };
+type Bindings = {
+  DB: D1Database;
+  EMAIL_FROM: string;
+  RESEND_API_KEY: string;
+  BGG_API_TOKEN: string;
+};
 type User = { id: string; email: string };
 type AppContext = Context<{ Bindings: Bindings }>;
 const app = new Hono<{ Bindings: Bindings }>();
 app.use("*", async (context, next) => {
   const method = context.req.method;
   const origin = context.req.header("Origin");
-  if (!["GET", "HEAD", "OPTIONS"].includes(method) && origin && origin !== new URL(context.req.url).origin) {
+  if (
+    !["GET", "HEAD", "OPTIONS"].includes(method) &&
+    origin &&
+    origin !== new URL(context.req.url).origin
+  ) {
     return context.json({ error: "Cross-origin request rejected" }, 403);
   }
   await next();
@@ -24,17 +44,28 @@ app.use("*", async (context, next) => {
   context.header("X-Frame-Options", "DENY");
   context.header("Referrer-Policy", "strict-origin-when-cross-origin");
   context.header("Permissions-Policy", "camera=(), microphone=(), geolocation=(), payment=()");
-  context.header("Content-Security-Policy", "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'");
+  context.header(
+    "Content-Security-Policy",
+    "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'"
+  );
 });
-app.route("/api/bgg",bggApi);
-app.route("/api/picker",pickerApi);
-app.route("/api",api);
+app.route("/api/bgg", bggApi);
+app.route("/api/picker", pickerApi);
+app.route("/api", api);
 
 app.get("/api/health", (context) => context.json({ ok: true }));
-app.get("/", async c => (await currentUser(c)) ? c.redirect("/app") : c.html(signInPage()));
-app.get("/sign-in", async c => (await currentUser(c)) ? c.redirect("/app") : c.html(signInPage()));
-app.get("/app", c => protectedHome(c));
-app.get("/app/:section", c => c.req.param("section")==="picker"?protectedHome(c):c.req.param("section")==="lab"?protectedLab(c):protectedApp(c,c.req.param("section")));
+app.get("/", async (c) => ((await currentUser(c)) ? c.redirect("/app") : c.html(signInPage())));
+app.get("/sign-in", async (c) =>
+  (await currentUser(c)) ? c.redirect("/app") : c.html(signInPage())
+);
+app.get("/app", (c) => protectedHome(c));
+app.get("/app/:section", (c) =>
+  c.req.param("section") === "picker"
+    ? protectedHome(c)
+    : c.req.param("section") === "lab"
+      ? protectedLab(c)
+      : protectedApp(c, c.req.param("section"))
+);
 
 app.post("/auth/request", async (context) => {
   const body = await context.req.parseBody();
@@ -47,28 +78,59 @@ app.post("/auth/request", async (context) => {
   const emailKey = await hash(`email|${email}|${bucket}`);
   const addressKey = await hash(`address|${address}|${bucket}`);
   const expiresAt = new Date((bucket + 1) * interval).toISOString();
-  const increment = "INSERT INTO auth_rate_limits(key,attempts,expires_at) VALUES(?,1,?) ON CONFLICT(key) DO UPDATE SET attempts=attempts+1";
+  const increment =
+    "INSERT INTO auth_rate_limits(key,attempts,expires_at) VALUES(?,1,?) ON CONFLICT(key) DO UPDATE SET attempts=attempts+1";
   await context.env.DB.batch([
-    context.env.DB.prepare("DELETE FROM auth_rate_limits WHERE expires_at < ?").bind(new Date().toISOString()),
-    context.env.DB.prepare("DELETE FROM login_tokens WHERE expires_at < ?").bind(new Date().toISOString()),
+    context.env.DB.prepare("DELETE FROM auth_rate_limits WHERE expires_at < ?").bind(
+      new Date().toISOString()
+    ),
+    context.env.DB.prepare("DELETE FROM login_tokens WHERE expires_at < ?").bind(
+      new Date().toISOString()
+    ),
     context.env.DB.prepare(increment).bind(emailKey, expiresAt),
     context.env.DB.prepare(increment).bind(addressKey, expiresAt)
   ]);
   const [emailRate, addressRate] = await Promise.all([
-    context.env.DB.prepare("SELECT attempts FROM auth_rate_limits WHERE key=?").bind(emailKey).first<{ attempts: number }>(),
-    context.env.DB.prepare("SELECT attempts FROM auth_rate_limits WHERE key=?").bind(addressKey).first<{ attempts: number }>()
+    context.env.DB.prepare("SELECT attempts FROM auth_rate_limits WHERE key=?")
+      .bind(emailKey)
+      .first<{ attempts: number }>(),
+    context.env.DB.prepare("SELECT attempts FROM auth_rate_limits WHERE key=?")
+      .bind(addressKey)
+      .first<{ attempts: number }>()
   ]);
-  if ((emailRate?.attempts ?? 0) > 5 || (addressRate?.attempts ?? 0) > 20) return context.req.header("Accept")?.includes("text/html") ? context.html(signInPage(neutral.message), 202) : context.json(neutral, 202);
-  const user = await context.env.DB.prepare("SELECT id, email FROM users WHERE email = ?").bind(email).first<User>();
+  if ((emailRate?.attempts ?? 0) > 5 || (addressRate?.attempts ?? 0) > 20)
+    return context.req.header("Accept")?.includes("text/html")
+      ? context.html(signInPage(neutral.message), 202)
+      : context.json(neutral, 202);
+  const user = await context.env.DB.prepare("SELECT id, email FROM users WHERE email = ?")
+    .bind(email)
+    .first<User>();
   if (!user) return context.json(neutral, 202);
 
   const token = randomToken();
   const code = randomCode();
-  await context.env.DB.prepare("INSERT INTO login_tokens (id, user_id, token_hash, code_hash, expires_at) VALUES (?, ?, ?, ?, ?)")
-    .bind(crypto.randomUUID(), user.id, await hash(token), await hash(code), expiresIn(LOGIN_TOKEN_MINUTES)).run();
+  await context.env.DB.prepare(
+    "INSERT INTO login_tokens (id, user_id, token_hash, code_hash, expires_at) VALUES (?, ?, ?, ?, ?)"
+  )
+    .bind(
+      crypto.randomUUID(),
+      user.id,
+      await hash(token),
+      await hash(code),
+      expiresIn(LOGIN_TOKEN_MINUTES)
+    )
+    .run();
   const url = `${new URL(context.req.url).origin}/auth/confirm?token=${encodeURIComponent(token)}`;
-  await sendSignInEmail({ apiKey: context.env.RESEND_API_KEY, from: context.env.EMAIL_FROM, to: user.email, url, code });
-  return context.req.header("Accept")?.includes("text/html") ? context.html(signInPage(neutral.message),202) : context.json(neutral,202);
+  await sendSignInEmail({
+    apiKey: context.env.RESEND_API_KEY,
+    from: context.env.EMAIL_FROM,
+    to: user.email,
+    url,
+    code
+  });
+  return context.req.header("Accept")?.includes("text/html")
+    ? context.html(signInPage(neutral.message), 202)
+    : context.json(neutral, 202);
 });
 
 app.get("/auth/confirm", (context) => {
@@ -84,50 +146,147 @@ app.post("/auth/confirm", async (context) => {
 app.post("/auth/code", async (context) => {
   const body = await context.req.parseBody();
   const email = normalizeEmail(String(body.email ?? ""));
-  const user = await context.env.DB.prepare("SELECT id, email FROM users WHERE email = ?").bind(email).first<User>();
+  const user = await context.env.DB.prepare("SELECT id, email FROM users WHERE email = ?")
+    .bind(email)
+    .first<User>();
   if (!user) return context.json({ error: "The code is invalid or expired." }, 400);
-  return consumeToken(context, "code_hash", await hash(String(body.code ?? "").trim().toUpperCase()), user.id);
+  return consumeToken(
+    context,
+    "code_hash",
+    await hash(
+      String(body.code ?? "")
+        .trim()
+        .toUpperCase()
+    ),
+    user.id
+  );
 });
 
 app.get("/api/session", async (context) => {
-  const user=await currentUser(context); return user?context.json({authenticated:true,user}):context.json({authenticated:false},401);
+  const user = await currentUser(context);
+  return user
+    ? context.json({ authenticated: true, user })
+    : context.json({ authenticated: false }, 401);
 });
 
 app.post("/auth/logout", async (context) => {
   const raw = getCookie(context, "bge_session");
-  if (raw) await context.env.DB.prepare("DELETE FROM sessions WHERE token_hash = ?").bind(await hash(raw)).run();
-  setCookie(context, "bge_session", "", { httpOnly: true, secure: true, sameSite: "Lax", path: "/", maxAge: 0 });
+  if (raw)
+    await context.env.DB.prepare("DELETE FROM sessions WHERE token_hash = ?")
+      .bind(await hash(raw))
+      .run();
+  setCookie(context, "bge_session", "", {
+    httpOnly: true,
+    secure: true,
+    sameSite: "Lax",
+    path: "/",
+    maxAge: 0
+  });
   return context.redirect("/");
 });
 
-async function consumeToken(context: AppContext, column: "token_hash" | "code_hash", value: string, userId?: string) {
+async function consumeToken(
+  context: AppContext,
+  column: "token_hash" | "code_hash",
+  value: string,
+  userId?: string
+) {
   const condition = userId ? " AND user_id = ?" : "";
-  const args = userId ? [value, new Date().toISOString(), userId] : [value, new Date().toISOString()];
-  const record = await context.env.DB.prepare(`SELECT id, user_id FROM login_tokens WHERE ${column} = ? AND consumed_at IS NULL AND expires_at > ?${condition} ORDER BY created_at DESC LIMIT 1`)
-    .bind(...args).first<{ id: string; user_id: string }>();
+  const args = userId
+    ? [value, new Date().toISOString(), userId]
+    : [value, new Date().toISOString()];
+  const record = await context.env.DB.prepare(
+    `SELECT id, user_id FROM login_tokens WHERE ${column} = ? AND consumed_at IS NULL AND expires_at > ?${condition} ORDER BY created_at DESC LIMIT 1`
+  )
+    .bind(...args)
+    .first<{ id: string; user_id: string }>();
   if (!record) return context.json({ error: "The sign-in request is invalid or expired." }, 400);
-  const consumed = await context.env.DB.prepare("UPDATE login_tokens SET consumed_at = ? WHERE id = ? AND consumed_at IS NULL")
-    .bind(new Date().toISOString(), record.id).run();
-  if (!consumed.meta.changes) return context.json({ error: "The sign-in request has already been used." }, 400);
+  const consumed = await context.env.DB.prepare(
+    "UPDATE login_tokens SET consumed_at = ? WHERE id = ? AND consumed_at IS NULL"
+  )
+    .bind(new Date().toISOString(), record.id)
+    .run();
+  if (!consumed.meta.changes)
+    return context.json({ error: "The sign-in request has already been used." }, 400);
 
   const session = randomToken();
   await context.env.DB.batch([
-    context.env.DB.prepare("UPDATE users SET accepted_at=COALESCE(accepted_at,CURRENT_TIMESTAMP) WHERE id=?").bind(record.user_id),
-    context.env.DB.prepare("UPDATE invitations SET status='accepted',accepted_at=COALESCE(accepted_at,CURRENT_TIMESTAMP) WHERE id=? AND status='pending'").bind(record.user_id)
+    context.env.DB.prepare(
+      "UPDATE users SET accepted_at=COALESCE(accepted_at,CURRENT_TIMESTAMP) WHERE id=?"
+    ).bind(record.user_id),
+    context.env.DB.prepare(
+      "UPDATE invitations SET status='accepted',accepted_at=COALESCE(accepted_at,CURRENT_TIMESTAMP) WHERE id=? AND status='pending'"
+    ).bind(record.user_id)
   ]);
-  await context.env.DB.prepare("INSERT INTO sessions (id, user_id, token_hash) VALUES (?, ?, ?)")
-    .bind(crypto.randomUUID(), record.user_id, await hash(session)).run();
+  const window = newSessionWindow();
+  await context.env.DB.prepare(
+    "INSERT INTO sessions (id, user_id, token_hash, expires_at, absolute_expires_at) VALUES (?, ?, ?, ?, ?)"
+  )
+    .bind(
+      crypto.randomUUID(),
+      record.user_id,
+      await hash(session),
+      window.expiresAt,
+      window.absoluteExpiresAt
+    )
+    .run();
   setSessionCookie(context, session);
   return context.redirect("/app");
 }
 
-async function protectedHome(c:AppContext){const user=await currentUser(c);if(!user)return c.redirect("/sign-in");return c.html(rebootPage(user))}
-async function protectedLab(c:AppContext){const user=await currentUser(c);if(!user)return c.redirect("/sign-in");if(user.role!=="admin")return c.redirect("/app");return c.html(recommendationLabPage(user))}
-async function protectedApp(c:AppContext,section:string){const user=await currentUser(c);if(!user)return c.redirect("/sign-in");const allowed=["library","missing-prices","import","trades","matcher","account"];if(section==="invitations"&&user.role==="admin")return c.html(appPage(user,section));return c.html(appPage(user,allowed.includes(section)?section:"library"))}
-async function currentUser(c:AppContext):Promise<AppUser|null>{const raw=getCookie(c,"bge_session");if(!raw)return null;const h=await hash(raw);const user=await c.env.DB.prepare("SELECT users.email, users.role FROM sessions JOIN users ON users.id=sessions.user_id WHERE sessions.token_hash=?").bind(h).first<AppUser>();if(!user)return null;await c.env.DB.prepare("UPDATE sessions SET last_seen_at=? WHERE token_hash=?").bind(new Date().toISOString(),h).run();setSessionCookie(c,raw);return user}
+async function protectedHome(c: AppContext) {
+  const user = await currentUser(c);
+  if (!user) return c.redirect("/sign-in");
+  return c.html(rebootPage(user));
+}
+async function protectedLab(c: AppContext) {
+  const user = await currentUser(c);
+  if (!user) return c.redirect("/sign-in");
+  if (user.role !== "admin") return c.redirect("/app");
+  return c.html(recommendationLabPage(user));
+}
+async function protectedApp(c: AppContext, section: string) {
+  const user = await currentUser(c);
+  if (!user) return c.redirect("/sign-in");
+  const allowed = ["library", "missing-prices", "import", "trades", "matcher", "account"];
+  if (section === "invitations" && user.role === "admin") return c.html(appPage(user, section));
+  return c.html(appPage(user, allowed.includes(section) ? section : "library"));
+}
+async function currentUser(c: AppContext): Promise<AppUser | null> {
+  const raw = getCookie(c, "bge_session");
+  if (!raw) return null;
+  const user = await loadSessionUser(c.env.DB, raw);
+  if (!user) return null;
+  setSessionCookie(c, raw);
+  return user;
+}
 
-export default app;
+export default {
+  fetch: app.fetch,
+  /**
+   * Cron entrypoint. Collection enrichment used to advance only while the user kept
+   * the picker tab open, so closing it stranded the run mid-sync. This sweep pushes
+   * every still-running sync forward server-side.
+   */
+  async scheduled(_event: ScheduledController, env: Bindings, ctx: ExecutionContext) {
+    ctx.waitUntil(
+      env.DB.prepare("DELETE FROM sessions WHERE expires_at IS NULL OR expires_at<=?")
+        .bind(new Date().toISOString())
+        .run()
+    );
+    ctx.waitUntil(runBackgroundSync(env.DB, env.BGG_API_TOKEN));
+  }
+} satisfies ExportedHandler<Bindings>;
 
 function setSessionCookie(context: AppContext, session: string): void {
-  setCookie(context, "bge_session", session, { httpOnly: true, secure: true, sameSite: "Lax", path: "/", maxAge: 60 * 60 * 24 * 400 });
+  setCookie(context, "bge_session", session, {
+    httpOnly: true,
+    secure: true,
+    sameSite: "Lax",
+    path: "/",
+    // The server enforces both an idle and an absolute deadline; the cookie is
+    // deliberately the looser of the two so the browser never drops a token that
+    // is still valid.
+    maxAge: 60 * 60 * 24 * SESSION_ABSOLUTE_DAYS
+  });
 }
