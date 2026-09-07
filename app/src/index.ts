@@ -14,7 +14,7 @@ import { appPage, confirmPage, signInPage, type AppUser } from "./ui";
 import { rebootPage } from "./reboot-ui";
 import { recommendationLabPage } from "./lab-ui";
 import api from "./api";
-import bggApi from "./bgg-api";
+import bggApi, { runBackgroundSync } from "./bgg-api";
 import pickerApi from "./picker-api";
 
 type Bindings = {
@@ -257,7 +257,17 @@ async function currentUser(c: AppContext): Promise<AppUser | null> {
   return user;
 }
 
-export default app;
+export default {
+  fetch: app.fetch,
+  /**
+   * Cron entrypoint. Collection enrichment used to advance only while the user kept
+   * the picker tab open, so closing it stranded the run mid-sync. This sweep pushes
+   * every still-running sync forward server-side.
+   */
+  async scheduled(_event: ScheduledController, env: Bindings, ctx: ExecutionContext) {
+    ctx.waitUntil(runBackgroundSync(env.DB, env.BGG_API_TOKEN));
+  }
+} satisfies ExportedHandler<Bindings>;
 
 function setSessionCookie(context: AppContext, session: string): void {
   setCookie(context, "bge_session", session, {

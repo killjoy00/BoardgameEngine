@@ -10,7 +10,7 @@ export function rebootPage(user: AppUser): string {
 
 <section class="onboard" id="connect-panel"><div><p class="section-label">Connect your shelf</p><h2>Use your BoardGameGeek username</h2><p class="muted">We read the public collection for this username. Your BoardGameEngine login stays separate.</p></div><form id="connect-form"><label for="bgg-username">BGG username</label><div class="inline"><input id="bgg-username" name="username" autocomplete="off" maxlength="100" placeholder="killjoy00" required><button class="primary" type="submit">Connect shelf</button></div><p class="error" id="connect-error" role="alert"></p></form></section>
 
-<section class="shelfbar" id="sync-panel" hidden><div class="shelf-main"><span class="status-dot" aria-hidden="true"></span><div><strong id="account-title">Your BGG shelf</strong><p id="shelf-summary">Collection connected</p></div></div><div class="shelf-actions"><span id="last-sync"></span><button class="secondary" id="sync-button" type="button">Refresh BGG</button><button class="text-button" id="change-user" type="button">Change username</button></div><div class="progress-wrap" id="progress-wrap" hidden><div class="progress-head"><strong id="progress-label">Preparing…</strong><span id="progress-count"></span></div><div class="progress"><i id="progress-bar"></i></div><small>You can leave this page while the collection finishes syncing.</small></div><p class="error" id="sync-error" role="alert"></p></section>
+<section class="shelfbar" id="sync-panel" hidden><div class="shelf-main"><span class="status-dot" aria-hidden="true"></span><div><strong id="account-title">Your BGG shelf</strong><p id="shelf-summary">Collection connected</p></div></div><div class="shelf-actions"><span id="last-sync"></span><button class="secondary" id="sync-button" type="button">Refresh BGG</button><button class="text-button" id="change-user" type="button">Change username</button></div><div class="progress-wrap" id="progress-wrap" hidden><div class="progress-head"><strong id="progress-label">Preparing…</strong><span id="progress-count"></span></div><div class="progress"><i id="progress-bar"></i></div><small id="progress-note">You can close this page — syncing continues on the server and picks up where it left off.</small></div><p class="error" id="sync-error" role="alert"></p></section>
 
 <section class="picker-card" id="picker-panel" hidden><header class="picker-header"><div><h2>Set the table</h2><p>Players, complexity, style, and time. Nothing else is required.</p></div><span id="picker-count" class="picker-count"></span></header><div class="notice" id="picker-notice" hidden></div>
 <form id="picker-form">
@@ -32,6 +32,7 @@ export function rebootPage(user: AppUser): string {
 
 const clientScript = `(()=>{
 const $=id=>document.getElementById(id),state={account:null,latestRun:null,status:null,syncing:false,players:4,playerBand:'4',minWeight:2,maxWeight:3.25,mode:'any'};
+let watchTimer=null;
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
 async function request(url,options={}){const response=await fetch(url,{...options,headers:{'Content-Type':'application/json',...(options.headers||{})}});let data={};try{data=await response.json()}catch{}if(!response.ok){const error=new Error(data.error||('Request failed ('+response.status+')'));error.status=response.status;error.data=data;throw error}return data}
 function text(id,value){$(id).textContent=value||''}
@@ -51,6 +52,21 @@ function render(){
   if(run){show('progress-wrap',true);progress(run)}else show('progress-wrap',false);
   show('picker-panel',ready);
   if(ready&&run&&run.status==='running'){show('picker-notice',true);text('picker-notice','A refresh is still running. Picks use the BGG data already saved for your shelf.')}else if(partial){show('picker-notice',true);text('picker-notice','The last sync finished with some missing BGG detail. Picks use the games that synced successfully.')}else show('picker-notice',false)
+  watchRun()
+}
+// The server advances a running sync on a cron sweep, so a page that is not itself
+// driving the sync still needs to poll to show that progress.
+function watchRun(){
+  if(watchTimer){clearTimeout(watchTimer);watchTimer=null}
+  const run=state.latestRun;
+  if(state.syncing||!run||run.status!=='running')return;
+  text('progress-note','You can close this page — syncing continues on the server and picks up where it left off.');
+  watchTimer=setTimeout(async()=>{
+    watchTimer=null;
+    if(state.syncing)return;
+    try{const data=await request('/api/bgg/sync/'+encodeURIComponent(run.id));state.latestRun=data.run;if(data.run&&data.run.status!=='running')return load();progress(data.run);watchRun()}
+    catch{watchRun()}
+  },10000)
 }
 function progress(run){const total=Number(run.totalItems)||0,done=Number(run.enrichedItems)||0,failed=Number(run.failedItems)||0,pct=total?Math.min(100,Math.round((done+failed)/total*100)):0;text('progress-label',run.status==='running'?'Syncing BGG data':run.status==='complete'?'Collection ready':run.status==='partial'?'Sync finished with gaps':'Sync '+run.status);text('progress-count',done+' / '+total+(failed?' · '+failed+' failed':''));$('progress-bar').style.width=pct+'%'}
 async function connect(event){event.preventDefault();text('connect-error','');const username=$('bgg-username').value.trim();try{const data=await request('/api/bgg/account',{method:'POST',body:JSON.stringify({username})});state.account=data.account;state.latestRun=null;render();await startSync()}catch(error){text('connect-error',error.message)}}

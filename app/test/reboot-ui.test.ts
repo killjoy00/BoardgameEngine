@@ -29,4 +29,11 @@ describe("picker-first application home", () => {
     expect(html).toContain('data-mode="competitive">Competitive</button>');
     expect(html).toContain('data-mode="cooperative">Cooperative</button>');
   });
+  it("only promises background syncing now that the server actually continues it", () => {
+    const html = rebootPage({ email: "owner@example.com", role: "member" });
+    expect(html).toContain("syncing continues on the server");
+    // The page must poll, or server-side progress would stay invisible to a tab
+    // that is not itself driving the sync.
+    expect(html).toContain("function watchRun()");
+  });
 });

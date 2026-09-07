@@ -12,6 +12,11 @@ routes = [
 [vars]
 EMAIL_FROM = "BoardGameEngine <login@boardgames.planitnow.us>"
 
+# Resumes any BGG collection sync left running, so enrichment continues after the
+# browser tab that started it is closed.
+[triggers]
+crons = ["* * * * *"]
+
 [[d1_databases]]
 binding = "DB"
 database_name = "boardgameengine"
