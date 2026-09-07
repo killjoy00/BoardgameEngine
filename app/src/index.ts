@@ -4,6 +4,7 @@ import { expiresIn, hash, isEmail, LOGIN_TOKEN_MINUTES, normalizeEmail, randomCo
 import { sendSignInEmail } from "./email";
 import { appPage, confirmPage, signInPage, type AppUser } from "./ui";
 import { rebootPage } from "./reboot-ui";
+import { recommendationLabPage } from "./lab-ui";
 import api from "./api";
 import bggApi from "./bgg-api";
 import pickerApi from "./picker-api";
@@ -33,7 +34,7 @@ app.get("/api/health", (context) => context.json({ ok: true }));
 app.get("/", async c => (await currentUser(c)) ? c.redirect("/app") : c.html(signInPage()));
 app.get("/sign-in", async c => (await currentUser(c)) ? c.redirect("/app") : c.html(signInPage()));
 app.get("/app", c => protectedHome(c));
-app.get("/app/:section", c => c.req.param("section")==="picker"?protectedHome(c):protectedApp(c,c.req.param("section")));
+app.get("/app/:section", c => c.req.param("section")==="picker"?protectedHome(c):c.req.param("section")==="lab"?protectedLab(c):protectedApp(c,c.req.param("section")));
 
 app.post("/auth/request", async (context) => {
   const body = await context.req.parseBody();
@@ -121,13 +122,12 @@ async function consumeToken(context: AppContext, column: "token_hash" | "code_ha
 }
 
 async function protectedHome(c:AppContext){const user=await currentUser(c);if(!user)return c.redirect("/sign-in");return c.html(rebootPage(user))}
+async function protectedLab(c:AppContext){const user=await currentUser(c);if(!user)return c.redirect("/sign-in");if(user.role!=="admin")return c.redirect("/app");return c.html(recommendationLabPage(user))}
 async function protectedApp(c:AppContext,section:string){const user=await currentUser(c);if(!user)return c.redirect("/sign-in");const allowed=["library","missing-prices","import","trades","matcher","account"];if(section==="invitations"&&user.role==="admin")return c.html(appPage(user,section));return c.html(appPage(user,allowed.includes(section)?section:"library"))}
 async function currentUser(c:AppContext):Promise<AppUser|null>{const raw=getCookie(c,"bge_session");if(!raw)return null;const h=await hash(raw);const user=await c.env.DB.prepare("SELECT users.email, users.role FROM sessions JOIN users ON users.id=sessions.user_id WHERE sessions.token_hash=?").bind(h).first<AppUser>();if(!user)return null;await c.env.DB.prepare("UPDATE sessions SET last_seen_at=? WHERE token_hash=?").bind(new Date().toISOString(),h).run();setSessionCookie(c,raw);return user}
 
 export default app;
 
 function setSessionCookie(context: AppContext, session: string): void {
-  // Browsers commonly cap persistent cookies near 400 days. Refreshing it on
-  // authenticated use keeps active users signed in until they explicitly leave.
   setCookie(context, "bge_session", session, { httpOnly: true, secure: true, sameSite: "Lax", path: "/", maxAge: 60 * 60 * 24 * 400 });
 }
