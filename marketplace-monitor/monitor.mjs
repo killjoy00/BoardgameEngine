@@ -3,13 +3,15 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { matchWishlist, searchTerm } from "./match.mjs";
+import { matchWishlist, searchTerm, localListing } from "./match.mjs";
+import { emptyOutbox, enqueueAlerts } from "./delivery.mjs";
 
 const directory = new URL("./data/", import.meta.url);
 const wishPath = new URL("wishlist.json", directory);
 const seenPath = new URL("seen.json", directory);
 const reportPath = new URL("last-scan.json", directory);
 const alertPath = new URL("alerts.json", directory);
+const pendingPath = new URL("pending-email.json", directory);
 
 export function selectQueries(games, slot, maxQueries = 12) {
   // A rotating subset prevents 367 individual queries every few hours.
@@ -83,7 +85,7 @@ async function scrapeQuery(query, token) {
     radiusKm: 32,
     sortBy: "creation_time_descend",
     // More comprehensive lookback for games checked less often than daily.
-    daysSinceListed: query.priority <= 2 ? "1" : "7",
+    daysSinceListed: query.priority <= 2 ? "1" : query.priority === 5 ? "30" : "7",
     getListingDetails: false,
     getAllListingPhotos: false,
     strictFiltering: true,
@@ -92,7 +94,7 @@ async function scrapeQuery(query, token) {
     proxy: { useApifyProxy: true }
   };
   const runUrl = "https://api.apify.com/v2/acts/Y0QGH7cuqgKtNbEgt/runs";
-  const created = await apifyJson(runUrl + "?maxTotalChargeUsd=0.08", token, {
+  const created = await apifyJson(runUrl + "?maxTotalChargeUsd=0.03", token, {
     method: "POST", body: JSON.stringify(input)
   });
   const runId = created.data?.id;
@@ -110,6 +112,48 @@ async function scrapeQuery(query, token) {
   if (!Array.isArray(data)) throw new Error("Unexpected Apify dataset response");
   return data.map(normalizeActorListing).filter(Boolean);
 }
+// These four Apify tasks already run on their own schedules. Fetch their
+// datasets instead of paying to search the same items again.
+const scheduledTasks = [
+  { taskId: "jUYfv4bKyJr9qDfuY", bggId: 367150 },
+  { taskId: "OCgyYehQSm8K24tfP", bggId: 380109 },
+  { taskId: "ALjMVkp1UTpWXe817", bggId: 421006 },
+  { taskId: "CzW5v08yZKJtmZTzY", bggId: "xbox" }
+];
+
+export function xboxListing(listing) {
+  return localListing(listing) && /\bxbox\b/i.test(listing.title || "");
+}
+export function xboxMatches(listings) {
+  return [...new Map(listings.filter(xboxListing).map((item) => [
+    String(item.id), {
+      listingId: String(item.id),
+      bggId: "xbox",
+      game: "Xbox",
+      priority: null,
+      listing: item.title,
+      price: item.price,
+      city: item.city,
+      url: item.url
+    }
+  ])).values()];
+}
+async function savedTaskResults(task, token) {
+  const url = "https://api.apify.com/v2/actor-tasks/" + encodeURIComponent(task.taskId) +
+    "/runs/last?status=SUCCEEDED";
+  const run = (await apifyJson(url, token)).data;
+  if (!run?.id || !run?.defaultDatasetId ||
+      !Number.isFinite(Date.parse(run.finishedAt || "")) ||
+      Date.now() - Date.parse(run.finishedAt) > 7 * 60 * 60 * 1000) {
+    throw new Error("Saved Apify task has no recent successful run");
+  }
+  const data = await apifyJson("https://api.apify.com/v2/datasets/" +
+    encodeURIComponent(run.defaultDatasetId) + "/items?clean=true&limit=150", token);
+  if (!Array.isArray(data)) throw new Error("Unexpected saved task dataset");
+  return { taskId: task.taskId, runId: run.id,
+    results: data.map(normalizeActorListing).filter(Boolean) };
+}
+
 async function boundedMap(values, limit, work) {
   const out = new Array(values.length);
   let cursor = 0;
@@ -126,48 +170,85 @@ async function boundedMap(values, limit, work) {
   return out;
 }
 
-export async function monitor({slot, scrape = scrapeQuery, token = process.env.APIFY_API_TOKEN} = {}) {
+export async function monitor({
+  slot, scrape = scrapeQuery, fetchSaved = savedTaskResults,
+  token = process.env.APIFY_API_TOKEN
+} = {}) {
   const wishlist = await readJson(wishPath, null);
-  if (!wishlist || !Array.isArray(wishlist.games) || wishlist.games.length < 10) {
-    throw new Error("No valid BGG wishlist snapshot; refuse to scan");
+  if (!wishlist || !Array.isArray(wishlist.games) || wishlist.games.length < 10 ||
+      !Number.isFinite(Date.parse(wishlist.syncedAt)) ||
+      Date.now() - Date.parse(wishlist.syncedAt) > 48 * 60 * 60 * 1000) {
+    throw new Error("BGG wishlist snapshot missing, invalid or stale; refusing to scan");
   }
   if (!token && scrape === scrapeQuery) {
-    throw new Error("APIFY_API_TOKEN is not configured in GitHub Actions secrets; scanner not activated");
+    throw new Error("APIFY_API_TOKEN is not configured in GitHub Actions secrets");
   }
   const interval = 4 * 60 * 60 * 1000;
   const currentSlot = Number.isInteger(slot) ? slot : Math.floor(Date.now() / interval);
   const maxQueries = Math.min(24, Math.max(2, Number(process.env.MAX_QUERIES_PER_RUN || 12)));
-  const queries = selectQueries(wishlist.games, currentSlot, maxQueries);
-  const attempts = await boundedMap(queries, 2, async (query) => ({
-    query, results: await scrape(query, token)
-  }));
-  const errors = attempts.filter((a) => a.error).map((a, i) => String(a.error).slice(0, 120));
-  const successful = attempts.filter((a) => !a.error);
-  if (!successful.length) throw new Error("All Apify queries failed; retaining previous state");
-  const fetched = successful.flatMap((entry) => entry.results);
-  const matches = matchWishlist(wishlist.games, fetched);
+  const planned = selectQueries(wishlist.games, currentSlot, maxQueries);
+  // P1 + Xbox are covered by the user's four already-running Apify tasks.
+  // Search remaining wishlist priorities on rotation; avoid noisy broad searches.
+  const coveredP1 = new Set(scheduledTasks.filter((t) => typeof t.bggId === "number").map((t) => t.bggId));
+  const newMustHaves = wishlist.games.filter((g) => g.priority === 1 && !coveredP1.has(g.bggId))
+    .map((g) => ({ searchKeyword: searchTerm(g), gameId: g.bggId, priority: 1 }));
+  const queries = [...newMustHaves, ...planned.filter((q) => q.priority >= 2 && q.priority <= 5)]
+    .slice(0, maxQueries);
+  const applicableTasks = scheduledTasks.filter((t) => t.bggId === "xbox" ||
+    wishlist.games.some((g) => g.bggId === t.bggId && g.priority === 1));
+  const [attempts, scheduled] = await Promise.all([
+    boundedMap(queries, 2, async (query) => ({
+      query, results: await scrape(query, token)
+    })),
+    boundedMap(applicableTasks, 2, async (task) => ({
+      task, ...(await fetchSaved(task, token))
+    }))
+  ]);
+  const errors = [
+    ...attempts.filter((a) => a.error).map((a) => "Search: " + String(a.error).slice(0, 100)),
+    ...scheduled.filter((a) => a.error).map((a) => "Scheduled task: " + String(a.error).slice(0, 100))
+  ];
+  const completed = attempts.filter((a) => !a.error);
+  const successfulTasks = scheduled.filter((a) => !a.error);
+  if (!completed.length && !successfulTasks.length) {
+    throw new Error("No successful Apify search or scheduled task; retaining previous state");
+  }
+  const searched = completed.flatMap((entry) => entry.results);
+  const taskGames = successfulTasks.filter((a) => a.task.bggId !== "xbox")
+    .flatMap((entry) => entry.results);
+  const xbox = successfulTasks.filter((a) => a.task.bggId === "xbox")
+    .flatMap((entry) => entry.results);
+  const fetched = [...searched, ...taskGames];
+  const matches = [...matchWishlist(wishlist.games, fetched), ...xboxMatches(xbox)];
   const prior = await readJson(seenPath, { ids: {} });
   const ids = prior.ids || {};
   const now = new Date().toISOString();
-  // Reject repeats, but report a listing anew if it reappears at a changed price.
-  // Establish a baseline silently; only notify about changes AFTER first successful scan.
+  // Quiet first-run baseline; later notify on fresh listing IDs or price changes.
   const isFirstScan = !prior.updatedAt;
-  const fresh = isFirstScan ? [] : matches.filter((m) => ids[m.listingId + ":" + m.bggId]?.price !== m.price);
-  for (const m of matches) ids[m.listingId + ":" + m.bggId] = { price: m.price, seenAt: now };
+  const fresh = isFirstScan ? [] : matches.filter((m) =>
+    ids[m.listingId + ":" + m.bggId]?.price !== m.price);
+  for (const m of matches) {
+    ids[m.listingId + ":" + m.bggId] = { price: m.price, seenAt: now };
+  }
   const cutoff = Date.now() - 60 * 86400000;
   for (const [key, value] of Object.entries(ids)) {
     if (Date.parse(value.seenAt || 0) < cutoff) delete ids[key];
   }
+  const pending = await readJson(pendingPath, emptyOutbox());
+  await saveJson(pendingPath, enqueueAlerts(pending, fresh, now));
   await saveJson(seenPath, { updatedAt: now, ids });
   const report = {
     checkedAt: now,
     wishlistSyncedAt: wishlist.syncedAt,
     wishlistCount: wishlist.games.length,
-    queriesAttempted: queries.length,
-    queriesCompleted: successful.length,
-    fetchedListings: fetched.length,
+    dynamicQueriesAttempted: queries.length,
+    dynamicQueriesCompleted: completed.length,
+    existingTasksChecked: applicableTasks.length,
+    existingTasksCompleted: successfulTasks.length,
+    fetchedListings: fetched.length + xbox.length,
     matchedListings: matches.length,
     newMatches: fresh.length,
+    firstScanBaseline: isFirstScan,
     errors
   };
   await saveJson(reportPath, report);
