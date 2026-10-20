@@ -1,0 +1,59 @@
+name: Deploy independent Apify Marketplace monitor
+
+on:
+  pull_request:
+    paths:
+      - "marketplace-actor/**"
+      - ".github/workflows/deploy-marketplace-apify.yml"
+  push:
+    branches: [main]
+    paths:
+      - "marketplace-actor/**"
+      - ".github/workflows/deploy-marketplace-apify.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-bgg-marketplace-apify
+  cancel-in-progress: false
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: "22"
+      - name: Test Marketplace Actor parsing, matching and outbox
+        run: node --test marketplace-actor/src/*.test.mjs
+      - name: Check Actor and deployment syntax
+        run: |
+          node --check marketplace-actor/src/main.mjs
+          node --check marketplace-actor/src/logic.mjs
+          node --check marketplace-actor/deploy.mjs
+
+  deploy:
+    needs: test
+    if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && github.run_attempt == 1 && contains(github.event.head_commit.message, 'APIFY_MARKETPLACE_DEPLOY_20261020') }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      APIFY_API_TOKEN: ${{ secrets.APIFY_API_TOKEN }}
+      BGG_API_TOKEN: ${{ secrets.BGG_API_TOKEN }}
+      RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+      MARKETPLACE_ALERT_TO: ${{ secrets.MARKETPLACE_ALERT_TO }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: "22"
+      - name: Verify exact reviewed default branch revision
+        run: test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+      - name: Deploy and smoke-test private Apify actor, then enable schedules
+        run: node marketplace-actor/deploy.mjs
