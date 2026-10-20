@@ -15,7 +15,10 @@ const TASKS = [
   { taskId: "CzW5v08yZKJtmZTzY", bggId: "xbox" }
 ];
 const PROXY = { useApifyProxy: true };
-const TOKEN = process.env.APIFY_TOKEN;
+// A hosted Actor's APIFY_TOKEN has limited permissions and cannot read
+// the user's existing saved Marketplace tasks. The dedicated private Actor
+// receives an encrypted owner-provisioned token at deployment time.
+const TOKEN = process.env.APIFY_MANAGER_TOKEN || process.env.APIFY_TOKEN;
 const USERNAME = "killjoy00";
 const STATE_NAME = "bgg-marketplace-monitor-managed-v1";
 const MAX_EMAIL_RETRY_MS = 20 * 60 * 60 * 1000;

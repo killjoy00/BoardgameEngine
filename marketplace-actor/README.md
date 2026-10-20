@@ -12,9 +12,12 @@ IDs/prices, a durable pending email outbox, health receipts, and a watchdog's
 last-alert timestamp. It does **not** contain API credentials, recipient email
 address, or email bodies. Resend idempotency keys guard retry duplication.
 
-Apify automatically supplies `APIFY_TOKEN`; the GitHub one-shot deployment
-copies existing `BGG_API_TOKEN`, `RESEND_API_KEY`, and
-`MARKETPLACE_ALERT_TO` into **encrypted Apify Actor environment variables**.
+Apify automatically supplies a *limited-permission* `APIFY_TOKEN`. To reuse
+existing private saved Actor tasks and read their datasets, the one-shot
+GitHub deployment also securely provisions `APIFY_MANAGER_TOKEN` from its
+existing `APIFY_API_TOKEN` repository secret. It also copies `BGG_API_TOKEN`,
+`RESEND_API_KEY`, and `MARKETPLACE_ALERT_TO` into **encrypted Apify Actor
+environment variables**.
 None of those values are checked into the public repository.
 
 The primary Apify schedule starts around 23 minutes past every fourth hour

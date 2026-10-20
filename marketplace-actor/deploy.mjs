@@ -89,6 +89,7 @@ async function main() {
     buildTag: "latest",
     applyEnvVarsToBuild: false,
     envVars: [
+      { name: "APIFY_MANAGER_TOKEN", value: process.env.APIFY_API_TOKEN, isSecret: true },
       { name: "BGG_API_TOKEN", value: process.env.BGG_API_TOKEN, isSecret: true },
       { name: "RESEND_API_KEY", value: process.env.RESEND_API_KEY, isSecret: true },
       { name: "MARKETPLACE_ALERT_TO", value: process.env.MARKETPLACE_ALERT_TO, isSecret: true }
