@@ -29,6 +29,7 @@ export function normalizedAlert(input, now) {
   const bggId = String(input?.bggId ?? "");
   const url = safeMarketplaceUrl(input?.url);
   if (!/^[0-9]+$/.test(listingId) || !/^(xbox|[0-9]+)$/.test(bggId) || !url ||
+      !url.endsWith("/" + listingId) && !url.endsWith("/" + listingId + "/") ||
       !String(input?.listing || "").trim()) return null;
   return {
     key: listingId + ":" + bggId,
