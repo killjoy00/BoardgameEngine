@@ -9,9 +9,10 @@ on:
       - "marketplace-monitor/**"
       - ".github/workflows/bgg-marketplace-monitor.yml"
   push:
-    branches: ["feat/bgg-marketplace-monitor"]
+    branches: ["main", "feat/bgg-marketplace-monitor"]
     paths:
-      - "marketplace-monitor/**"
+      - "marketplace-monitor/*.mjs"
+      - "marketplace-monitor/*.test.mjs"
       - ".github/workflows/bgg-marketplace-monitor.yml"
 
 permissions:
@@ -35,7 +36,10 @@ jobs:
 
   monitor:
     needs: test
-    if: github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')
+    # A reviewed main-branch source merge can restore missing snapshots without
+    # waiting on an unreliable GitHub cron. Data-only bot commits do not match
+    # the paths above, avoiding a deployment loop.
+    if: github.ref == 'refs/heads/main' && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || github.event_name == 'push')
     runs-on: ubuntu-24.04
     timeout-minutes: 35
     permissions:
@@ -54,6 +58,7 @@ jobs:
         with:
           node-version: "24"
       - name: Refresh approved BGG wishlist (without logging tokens)
+        id: bgg_sync
         run: |
           if [ -z "$BGG_API_TOKEN" ]; then
             echo "::error::Missing BGG_API_TOKEN for approved XML API2 integration"
@@ -61,14 +66,18 @@ jobs:
           fi
           node marketplace-monitor/sync-wishlist.mjs
       - name: Publish dynamic Marketplace search plan for ChatGPT MCP
+        id: plan
         run: node marketplace-monitor/plan-queries.mjs
       - name: Search Apify for newly listed games
-        if: env.APIFY_API_TOKEN != ''
+        # Don't make paid Marketplace requests just to repair BGG data on a push.
+        if: env.APIFY_API_TOKEN != '' && github.event_name == 'schedule'
         run: node marketplace-monitor/monitor.mjs
       - name: Report missing one-time Apify credential
         if: env.APIFY_API_TOKEN == ''
         run: echo "::warning::Configure APIFY_API_TOKEN in GitHub Actions repository secrets to enable continuous Marketplace scanning"
       - name: Persist wishlist and scan state for the next run
+        # Snapshot writes must survive a later, unrelated Apify scanning failure.
+        if: ${{ always() && steps.bgg_sync.outcome == 'success' && steps.plan.outcome == 'success' }}
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
