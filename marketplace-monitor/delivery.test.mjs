@@ -36,8 +36,8 @@ test("queues valid matches once, without persisting any recipient or email body"
 });
 test("rejects non-Facebook or malformed links before emailing", () => {
   assert.equal(normalizedAlert({ ...one, url: "https://notfacebook.com/marketplace/item/22" }, now), null);
-  assert.equal(normalizedAlert({ ...one, url: "https://www.facebook.com/marketplace/item/22?q=secret" }, now)?.url,
-    "https://www.facebook.com/marketplace/item/22");
+  assert.equal(normalizedAlert({ ...one, url: "https://www.facebook.com/marketplace/item/1077278561802556?q=secret" }, now)?.url,
+    "https://www.facebook.com/marketplace/item/1077278561802556");
   assert.equal(normalizedAlert({ ...one, listingId: "bad" }, now), null);
   assert.equal(normalizedAlert({ ...one, url: "https://www.facebook.com/marketplace/item/22/" }, now), null);
 });
