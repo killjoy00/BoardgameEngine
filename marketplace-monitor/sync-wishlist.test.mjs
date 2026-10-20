@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { parseWishlist } from "./sync-wishlist.mjs";
+import { parseWishlist, collectionSummary } from "./sync-wishlist.mjs";
 
 test("wishlist XML parser preserves IDs, names, priority and expansions", () => {
   const xml = '<?xml version="1.0"?><items totalitems="3">' +
@@ -20,4 +20,25 @@ test("empty/corrupt records never become search terms", () => {
   const xml = '<items><item objectid="missing"><name>Not id</name><status wishlist="1" /></item>' +
     '<item objectid="52"><name></name><status wishlist="1" /></item></items>';
   assert.deepEqual(parseWishlist(xml), []);
+});
+
+test("BGG's unfiltered collection exposes wishlisted games without treating ownership as wishlist", () => {
+  const xml = '<items totalitems="4" termsofuse="https://boardgamegeek.com/xmlapi/termsofuse">' +
+    '<item objecttype="thing" objectid="100" subtype="boardgame" collid="5">' +
+    '<name sortindex="1">An Owned Game</name><status own="1" wishlist="0" wishlistpriority="0" lastmodified="2026-10-18 00:00:00" /></item>' +
+    '<item objecttype="thing" objectid="421006" subtype="boardgame" collid="6">' +
+    '<name sortindex="1">Lord of the Rings: Duel for Middle-earth</name><status own="0" wishlist="1" wishlistpriority="1" lastmodified="2026-10-18 01:00:00" /></item>' +
+    '<item objecttype="thing" objectid="223" subtype="boardgameexpansion" collid="7">' +
+    '<name sortindex="1">An Expansion</name><status own="0" wishlist="1" wishlistpriority="4" /></item>' +
+    '<item objecttype="thing" objectid="224" subtype="boardgame" collid="8">' +
+    '<name sortindex="1">Not wishlisted</name><status own="0" wishlist="0" /></item></items>';
+  assert.deepEqual(parseWishlist(xml).map(({ bggId, priority }) => ({ bggId, priority })), [
+    { bggId: 223, priority: 4 }, { bggId: 421006, priority: 1 }
+  ]);
+  assert.deepEqual(collectionSummary(xml), {
+    isCollectionXml: true, declaredTotal: 4, itemTags: 4, parsedWishlistItems: 2
+  });
+  assert.deepEqual(collectionSummary('<html><body>Not XML</body></html>'), {
+    isCollectionXml: false, declaredTotal: null, itemTags: 0, parsedWishlistItems: 0
+  });
 });
