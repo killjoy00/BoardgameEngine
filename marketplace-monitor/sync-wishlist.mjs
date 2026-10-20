@@ -41,10 +41,11 @@ export function parseWishlist(xml) {
   return [...unique.values()].sort((a, b) => a.bggId - b.bggId);
 }
 
-async function requestCollection(token) {
+async function requestCollection(token, subtype = null) {
   const url = new URL("https://boardgamegeek.com/xmlapi2/collection");
   url.searchParams.set("username", username);
   url.searchParams.set("wishlist", "1");
+  if (subtype) url.searchParams.set("subtype", subtype);
   for (let attempt = 1; attempt <= 8; attempt++) {
     if (attempt > 1) await sleep(Math.min(45_000, 5000 * attempt));
     const response = await fetch(url, {
@@ -78,7 +79,15 @@ export async function synchronize() {
     return prior;
   }
   const xml = await requestCollection(token);
-  const games = parseWishlist(xml);
+  // The default collection response mislabels some expansions as base games.
+  // Retrieve the expansion-specific collection separately and merge by BGG ID.
+  await sleep(5000);
+  const expansionXml = await requestCollection(token, "boardgameexpansion");
+  const expansionIds = new Set(parseWishlist(expansionXml).map((item) => item.bggId));
+  const games = parseWishlist(xml).map((game) => ({
+    ...game,
+    isExpansion: game.isExpansion || expansionIds.has(game.bggId)
+  }));
   if (games.length < 10 || (prior?.count && games.length < prior.count * 0.5)) {
     throw new Error("BGG response too small: " + games.length + " items; retaining previous snapshot");
   }
