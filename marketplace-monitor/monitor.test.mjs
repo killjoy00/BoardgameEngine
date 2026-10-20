@@ -7,6 +7,8 @@ const games = [
   { bggId: 2, name: "Gibberers", priority: 1 },
   { bggId: 3, name: "Lord of the Rings: Duel for Middle-earth", priority: 1 },
   ...Array.from({length: 10}, (_, i) => ({ bggId: 100 + i, name: "Test game " + i, priority: 2 })),
+  ...Array.from({length: 10}, (_, i) => ({ bggId: 200 + i, name: "Third tier " + i, priority: 3 })),
+  ...Array.from({length: 10}, (_, i) => ({ bggId: 300 + i, name: "Fourth tier " + i, priority: 4 })),
   ...Array.from({length: 50}, (_, i) => ({ bggId: 500 + i, name: "Lower priority title " + i, priority: 5 }))
 ];
 
