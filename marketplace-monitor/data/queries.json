@@ -1,0 +1,68 @@
+{
+  "generatedAt": "2026-10-20T18:15:40.990Z",
+  "wishlistSyncedAt": "2026-10-20T18:15:40.946Z",
+  "wishlistCount": 368,
+  "slot": 124480,
+  "queries": [
+    {
+      "searchKeyword": "Dune War for Arrakis",
+      "gameId": 367150,
+      "priority": 1
+    },
+    {
+      "searchKeyword": "Gibberers",
+      "gameId": 380109,
+      "priority": 1
+    },
+    {
+      "searchKeyword": "Duel for Middle Earth",
+      "gameId": 421006,
+      "priority": 1
+    },
+    {
+      "searchKeyword": "Confident board game",
+      "gameId": 251726,
+      "priority": 2
+    },
+    {
+      "searchKeyword": "Foundations of Rome board game",
+      "gameId": 284189,
+      "priority": 2
+    },
+    {
+      "searchKeyword": "Heir to the Pharaoh",
+      "gameId": 192906,
+      "priority": 3
+    },
+    {
+      "searchKeyword": "In Vino Morte",
+      "gameId": 212404,
+      "priority": 3
+    },
+    {
+      "searchKeyword": "Volta board game",
+      "gameId": 39976,
+      "priority": 4
+    },
+    {
+      "searchKeyword": "Schiebung board game",
+      "gameId": 43315,
+      "priority": 4
+    },
+    {
+      "searchKeyword": "The Shadow Over Westminster",
+      "gameId": 159405,
+      "priority": 5
+    },
+    {
+      "searchKeyword": "Mangrovia board game",
+      "gameId": 165948,
+      "priority": 5
+    },
+    {
+      "searchKeyword": "board games",
+      "gameId": null,
+      "priority": 6
+    }
+  ]
+}
