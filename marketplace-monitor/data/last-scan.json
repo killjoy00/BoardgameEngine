@@ -1,0 +1,13 @@
+{
+  "status": "not_run",
+  "checkedAt": null,
+  "wishlistSyncedAt": null,
+  "wishlistCount": null,
+  "queriesAttempted": 0,
+  "queriesCompleted": 0,
+  "fetchedListings": 0,
+  "matchedListings": 0,
+  "newMatches": 0,
+  "errors": [],
+  "reason": "GitHub Actions Apify scan not yet executed; no matches claimed"
+}
