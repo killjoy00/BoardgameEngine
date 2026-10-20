@@ -1,13 +1,14 @@
 {
-  "status": "not_run",
-  "checkedAt": null,
-  "wishlistSyncedAt": null,
-  "wishlistCount": null,
-  "queriesAttempted": 0,
-  "queriesCompleted": 0,
-  "fetchedListings": 0,
-  "matchedListings": 0,
+  "checkedAt": "2026-10-20T19:09:43.593Z",
+  "wishlistSyncedAt": "2026-10-20T18:15:40.946Z",
+  "wishlistCount": 368,
+  "dynamicQueriesAttempted": 8,
+  "dynamicQueriesCompleted": 8,
+  "existingTasksChecked": 4,
+  "existingTasksCompleted": 4,
+  "fetchedListings": 7,
+  "matchedListings": 4,
   "newMatches": 0,
-  "errors": [],
-  "reason": "GitHub Actions Apify scan not yet executed; no matches claimed"
+  "firstScanBaseline": true,
+  "errors": []
 }
