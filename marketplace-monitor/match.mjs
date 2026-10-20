@@ -34,10 +34,11 @@ export function titleVariants(game) {
 }
 export function searchTerm(game) {
   if (ALIASES[game.bggId]) return ALIASES[game.bggId][0];
-  // Drop very long subtitles; unique short titles get "board game" context.
-  const colon = game.name.indexOf(":");
-  const title = colon > 7 && game.name.length > 35 ? game.name.slice(0, colon) : game.name;
-  return normalize(title).split(" ").length <= 2 ? title + " board game" : title;
+  // Keep distinguishing subtitles: searching for only "The Lord of the Rings"
+  // would produce hundreds of unrelated Marketplace results.
+  return normalize(game.name).split(" ").length <= 2
+    ? game.name + " board game"
+    : game.name;
 }
 
 function matchingTitle(game, listingTitle) {
