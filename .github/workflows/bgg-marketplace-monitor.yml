@@ -60,6 +60,8 @@ jobs:
             exit 1
           fi
           node marketplace-monitor/sync-wishlist.mjs
+      - name: Publish dynamic Marketplace search plan for ChatGPT MCP
+        run: node marketplace-monitor/plan-queries.mjs
       - name: Search Apify for newly listed games
         if: env.APIFY_API_TOKEN != ''
         run: node marketplace-monitor/monitor.mjs
