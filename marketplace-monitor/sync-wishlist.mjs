@@ -41,10 +41,25 @@ export function parseWishlist(xml) {
   return [...unique.values()].sort((a, b) => a.bggId - b.bggId);
 }
 
-async function requestCollection(token, subtype = null) {
+// BGG's filtered Collection endpoint has previously returned HTTP 200 with
+// zero usable wishlist records despite a nonempty public wishlist. A single
+// unfiltered request is a safe fallback; it is filtered locally by status.
+export function collectionSummary(xml) {
+  // Aggregate metadata only; safe for GitHub Actions logs.
+  const root = /<items\\b([^>]*)>/.exec(xml)?.[1] ?? "";
+  const total = /\\btotalitems="(\\d+)"/.exec(root)?.[1] ?? null;
+  return {
+    isCollectionXml: Boolean(root),
+    declaredTotal: total === null ? null : Number(total),
+    itemTags: [...xml.matchAll(/<item\\b/g)].length,
+    parsedWishlistItems: parseWishlist(xml).length
+  };
+}
+
+async function requestCollection(token, subtype = null, filtered = true) {
   const url = new URL("https://boardgamegeek.com/xmlapi2/collection");
   url.searchParams.set("username", username);
-  url.searchParams.set("wishlist", "1");
+  if (filtered) url.searchParams.set("wishlist", "1");
   if (subtype) url.searchParams.set("subtype", subtype);
   for (let attempt = 1; attempt <= 8; attempt++) {
     if (attempt > 1) await sleep(Math.min(45_000, 5000 * attempt));
@@ -78,19 +93,38 @@ export async function synchronize() {
     console.log("BGG wishlist snapshot is fresh:", prior?.count, "games");
     return prior;
   }
-  const xml = await requestCollection(token);
-  // The default collection response mislabels some expansions as base games.
-  // Retrieve the expansion-specific collection separately and merge by BGG ID.
-  await sleep(5000);
-  const expansionXml = await requestCollection(token, "boardgameexpansion");
-  const expansionIds = new Set(parseWishlist(expansionXml).map((item) => item.bggId));
-  const games = parseWishlist(xml).map((game) => ({
-    ...game,
-    isExpansion: game.isExpansion || expansionIds.has(game.bggId)
-  }));
+  const filteredXml = await requestCollection(token);
+  let games = parseWishlist(filteredXml);
+  if (games.length < 10) {
+    // Log only response SHAPE and counts. Never log collection XML, tokens,
+    // private fields, user identifiers, or BGG response bodies.
+    console.warn("Filtered BGG wishlist unusable:", collectionSummary(filteredXml));
+    await sleep(5000);
+    const fullXml = await requestCollection(token, null, false);
+    games = parseWishlist(fullXml);
+    console.log("Unfiltered BGG fallback:", collectionSummary(fullXml));
+  }
+  // Do not issue further source requests when BGG supplies a suspiciously small
+  // collection: keep last verified snapshot and make the workflow fail visibly.
   if (games.length < 10 || (prior?.count && games.length < prior.count * 0.5)) {
     throw new Error("BGG response too small: " + games.length + " items; retaining previous snapshot");
   }
+  // The BGG default collection response can label expansions as base games.
+  // Classify using the expansion-only filtered view, with a bounded unfiltered
+  // fallback if BGG returns an unexpectedly empty filtered expansion view.
+  await sleep(5000);
+  let expansionXml = await requestCollection(token, "boardgameexpansion");
+  let expansionIds = new Set(parseWishlist(expansionXml).map((item) => item.bggId));
+  if (!expansionIds.size) {
+    console.warn("Filtered BGG expansion view empty:", collectionSummary(expansionXml));
+    await sleep(5000);
+    expansionXml = await requestCollection(token, "boardgameexpansion", false);
+    expansionIds = new Set(parseWishlist(expansionXml).map((item) => item.bggId));
+  }
+  games = games.map((game) => ({
+    ...game,
+    isExpansion: game.isExpansion || expansionIds.has(game.bggId)
+  }));
   const snapshot = {
     source: "BoardGameGeek XML API2",
     username,
