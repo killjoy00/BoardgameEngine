@@ -33,6 +33,7 @@ jobs:
         with:
           node-version: "24"
       - run: node --test marketplace-monitor/*.test.mjs
+      - run: node --check marketplace-monitor/activation-test.mjs
 
   monitor:
     needs: test
