@@ -1,15 +1,12 @@
-name: BGG Marketplace monitor
+name: BGG Marketplace code tests (runtime moved to Apify)
 
 on:
-  schedule:
-    - cron: "17 */4 * * *"
-  workflow_dispatch:
   pull_request:
     paths:
       - "marketplace-monitor/**"
       - ".github/workflows/bgg-marketplace-monitor.yml"
   push:
-    branches: ["main", "feat/bgg-marketplace-monitor"]
+    branches: ["main"]
     paths:
       - "marketplace-monitor/*.mjs"
       - "marketplace-monitor/*.test.mjs"
@@ -17,10 +14,6 @@ on:
 
 permissions:
   contents: read
-
-concurrency:
-  group: bgg-marketplace-monitor
-  cancel-in-progress: false
 
 jobs:
   test:
@@ -34,89 +27,3 @@ jobs:
           node-version: "24"
       - run: node --test marketplace-monitor/*.test.mjs
 
-  monitor:
-    needs: test
-    # A reviewed main-branch source merge can restore missing snapshots without
-    # waiting on an unreliable GitHub cron. Data-only bot commits do not match
-    # the paths above, avoiding a deployment loop.
-    if: github.ref == 'refs/heads/main' && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || github.event_name == 'push')
-    runs-on: ubuntu-24.04
-    timeout-minutes: 35
-    permissions:
-      contents: write
-    env:
-      BGG_API_TOKEN: ${{ secrets.BGG_API_TOKEN }}
-      APIFY_API_TOKEN: ${{ secrets.APIFY_API_TOKEN }}
-      RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
-      MARKETPLACE_ALERT_TO: ${{ secrets.MARKETPLACE_ALERT_TO }}
-      MARKETPLACE_ALERT_FROM: "Marketplace Alerts <alerts@planitnow.us>"
-      BGG_USERNAME: killjoy00
-      MAX_QUERIES_PER_RUN: "12"
-    steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-        with:
-          persist-credentials: true
-          fetch-depth: 0
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
-        with:
-          node-version: "24"
-      - name: Refresh approved BGG wishlist (without logging tokens)
-        id: bgg_sync
-        run: |
-          if [ -z "$BGG_API_TOKEN" ]; then
-            echo "::error::Missing BGG_API_TOKEN for approved XML API2 integration"
-            exit 1
-          fi
-          node marketplace-monitor/sync-wishlist.mjs
-      - name: Publish dynamic Marketplace search plan for ChatGPT MCP
-        id: plan
-        run: node marketplace-monitor/plan-queries.mjs
-      - name: Search Apify for newly listed games
-        id: scan
-        # Don't make paid Marketplace requests just to repair BGG data on a push.
-        if: ${{ env.APIFY_API_TOKEN != '' && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') }}
-        run: node marketplace-monitor/monitor.mjs
-      - name: Report missing one-time Apify credential
-        if: env.APIFY_API_TOKEN == ''
-        run: echo "::warning::Configure APIFY_API_TOKEN in GitHub Actions repository secrets to enable continuous Marketplace scanning"
-      - name: Persist wishlist and scan state for the next run
-        id: persist
-        # Snapshot writes must survive a later, unrelated Apify scanning failure.
-        if: ${{ always() && steps.bgg_sync.outcome == 'success' && steps.plan.outcome == 'success' }}
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add marketplace-monitor/data
-          if git diff --cached --quiet; then
-            echo "No data changes to save"
-          else
-            git commit -m "chore: persist BGG marketplace wishlist and scan state [skip ci]"
-            git push origin HEAD:main
-          fi
-      - name: Prepare durable Marketplace email batch
-        id: prepare_email
-        if: ${{ github.ref == 'refs/heads/main' && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && steps.persist.outcome == 'success' && env.RESEND_API_KEY != '' && env.MARKETPLACE_ALERT_TO != '' }}
-        run: |
-          node marketplace-monitor/delivery.mjs prepare
-          # Persist the exact message batch BEFORE calling Resend; subsequent
-          # retries must use the same payload and idempotency key.
-          git add marketplace-monitor/data/pending-email.json
-          if ! git diff --cached --quiet; then
-            git commit -m "chore: freeze marketplace email batch [skip ci]"
-            git push origin HEAD:main
-          fi
-      - name: Send verified Marketplace matches via Resend
-        id: send_email
-        if: steps.prepare_email.outcome == 'success'
-        run: node marketplace-monitor/delivery.mjs send
-      - name: Persist successful email delivery receipt
-        if: steps.send_email.outcome == 'success'
-        run: |
-          git add marketplace-monitor/data/pending-email.json marketplace-monitor/data/email-notified.json
-          if ! git diff --cached --quiet; then
-            git commit -m "chore: record Marketplace email delivery [skip ci]"
-            git push origin HEAD:main
-          fi
-      - name: Report missing outbound email configuration
-        if: ${{ (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && (env.RESEND_API_KEY == '' || env.MARKETPLACE_ALERT_TO == '') }}
-        run: echo "::warning::Marketplace emails remain OFF until RESEND_API_KEY and MARKETPLACE_ALERT_TO GitHub Actions secrets are available"
