@@ -150,7 +150,9 @@ export async function monitor({slot, scrape = scrapeQuery, token = process.env.A
   const ids = prior.ids || {};
   const now = new Date().toISOString();
   // Reject repeats, but report a listing anew if it reappears at a changed price.
-  const fresh = matches.filter((m) => ids[m.listingId + ":" + m.bggId]?.price !== m.price);
+  // Establish a baseline silently; only notify about changes AFTER first successful scan.
+  const isFirstScan = !prior.updatedAt;
+  const fresh = isFirstScan ? [] : matches.filter((m) => ids[m.listingId + ":" + m.bggId]?.price !== m.price);
   for (const m of matches) ids[m.listingId + ":" + m.bggId] = { price: m.price, seenAt: now };
   const cutoff = Date.now() - 60 * 86400000;
   for (const [key, value] of Object.entries(ids)) {
