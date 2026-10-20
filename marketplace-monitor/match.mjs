@@ -30,8 +30,6 @@ function tokens(text) {
 export function titleVariants(game) {
   const initial = game.name;
   const list = [initial, ...(ALIASES[game.bggId] || [])];
-  const colon = initial.indexOf(":");
-  if (colon >= 0 && colon >= 6) list.push(initial.slice(0, colon));
   return [...new Set(list)].filter(Boolean);
 }
 export function searchTerm(game) {
