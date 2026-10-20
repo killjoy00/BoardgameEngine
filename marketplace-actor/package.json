@@ -1,0 +1,11 @@
+{
+  "name": "bgg-marketplace-monitor-actor",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Private Apify-hosted BGG wishlist Facebook Marketplace email monitor",
+  "scripts": {
+    "test": "node --test src/*.test.mjs",
+    "start": "node src/main.mjs"
+  }
+}
