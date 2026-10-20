@@ -33,6 +33,7 @@ jobs:
         with:
           node-version: "24"
       - run: node --test marketplace-monitor/*.test.mjs
+      - run: node --check marketplace-monitor/activation-test.mjs
 
   monitor:
     needs: test
@@ -49,7 +50,7 @@ jobs:
       APIFY_API_TOKEN: ${{ secrets.APIFY_API_TOKEN }}
       RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
       MARKETPLACE_ALERT_TO: ${{ secrets.MARKETPLACE_ALERT_TO }}
-      MARKETPLACE_ALERT_FROM: "Marketplace Alerts <login@boardgames.planitnow.us>"
+      MARKETPLACE_ALERT_FROM: "Marketplace Alerts <alerts@planitnow.us>"
       BGG_USERNAME: killjoy00
       MAX_QUERIES_PER_RUN: "12"
     steps:
@@ -74,7 +75,7 @@ jobs:
       - name: Search Apify for newly listed games
         id: scan
         # Don't make paid Marketplace requests just to repair BGG data on a push.
-        if: env.APIFY_API_TOKEN != '' && github.event_name == 'schedule'
+        if: ${{ env.APIFY_API_TOKEN != '' && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && contains(github.event.head_commit.message, 'marketplace-activate-20261020-1403'))) }}
         run: node marketplace-monitor/monitor.mjs
       - name: Report missing one-time Apify credential
         if: env.APIFY_API_TOKEN == ''
@@ -95,7 +96,7 @@ jobs:
           fi
       - name: Prepare durable Marketplace email batch
         id: prepare_email
-        if: ${{ github.ref == 'refs/heads/main' && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && steps.persist.outcome == 'success' && env.RESEND_API_KEY != '' && env.MARKETPLACE_ALERT_TO != '' }}
+        if: ${{ github.ref == 'refs/heads/main' && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && contains(github.event.head_commit.message, 'marketplace-activate-20261020-1403'))) && steps.persist.outcome == 'success' && env.RESEND_API_KEY != '' && env.MARKETPLACE_ALERT_TO != '' }}
         run: |
           node marketplace-monitor/delivery.mjs prepare
           # Persist the exact message batch BEFORE calling Resend; subsequent
@@ -117,6 +118,11 @@ jobs:
             git commit -m "chore: record Marketplace email delivery [skip ci]"
             git push origin HEAD:main
           fi
+      - name: One-time activation delivery test (no listing implied)
+        if: ${{ github.event_name == 'push' && contains(github.event.head_commit.message, 'marketplace-activate-20261020-1403') && steps.send_email.outcome == 'success' }}
+        env:
+          MARKETPLACE_ACTIVATION_TEST: "1"
+        run: node marketplace-monitor/activation-test.mjs
       - name: Report missing outbound email configuration
-        if: ${{ github.event_name == 'schedule' && (env.RESEND_API_KEY == '' || env.MARKETPLACE_ALERT_TO == '') }}
+        if: ${{ (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && contains(github.event.head_commit.message, 'marketplace-activate-20261020-1403'))) && (env.RESEND_API_KEY == '' || env.MARKETPLACE_ALERT_TO == '') }}
         run: echo "::warning::Marketplace emails remain OFF until RESEND_API_KEY and MARKETPLACE_ALERT_TO GitHub Actions secrets are available"
