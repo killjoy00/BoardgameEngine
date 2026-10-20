@@ -42,8 +42,13 @@ One additional independent secret is required for unattended Apify API requests:
   or session cookies are required.
 
 The MCP integration's OAuth credential grants ChatGPT access but **does not automatically
-populate a GitHub Actions secret**. Until this is configured, the GitHub job refreshes the
-BGG wishlist but intentionally **skips** Marketplace scans.
+populate a GitHub Actions secret**. Without that extra secret, the GitHub job still
+refreshes the BGG wishlist and exports `data/queries.json`. A separately configured
+ChatGPT scheduled task can consume this file and execute searches directly through the
+connected Apify MCP, avoiding the extra token setup. The ChatGPT task uses
+`data/mcp-seen.json` to avoid repeat notifications. **Do not enable both the
+GitHub Apify scanner and ChatGPT's Apify scanner** simultaneously: that would duplicate
+requests and charges. The three priority-1 pilot tasks run separately.
 
 ## Operation
 
