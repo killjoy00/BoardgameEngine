@@ -46,12 +46,12 @@ export function parseWishlist(xml) {
 // unfiltered request is a safe fallback; it is filtered locally by status.
 export function collectionSummary(xml) {
   // Aggregate metadata only; safe for GitHub Actions logs.
-  const root = /<items\\b([^>]*)>/.exec(xml)?.[1] ?? "";
-  const total = /\\btotalitems="(\\d+)"/.exec(root)?.[1] ?? null;
+  const root = /<items\b([^>]*)>/.exec(xml)?.[1] ?? "";
+  const total = /\btotalitems="(\d+)"/.exec(root)?.[1] ?? null;
   return {
     isCollectionXml: Boolean(root),
     declaredTotal: total === null ? null : Number(total),
-    itemTags: [...xml.matchAll(/<item\\b/g)].length,
+    itemTags: [...xml.matchAll(/<item\b/g)].length,
     parsedWishlistItems: parseWishlist(xml).length
   };
 }
