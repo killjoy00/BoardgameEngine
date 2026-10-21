@@ -5,6 +5,29 @@ const ACCESSORY = /\b(organizer|insert|sleeves?|playmat|replacement|parts only|p
 const AUSTIN_NEAR = new Set(["austin", "cedar park", "pflugerville", "round rock", "buda", "kyle",
   "lakeway", "bee cave", "sunset valley", "west lake hills", "manor", "del valle",
   "dripping springs", "rollingwood", "westlake", "hutto"]);
+/**
+ * The Xbox pilot stays within approximately 20 miles of downtown Austin.
+ * For BGG wishlist games, search the wider central-Texas region (~100 miles).
+ * Geographic metadata from Marketplace is often city-only; the explicit
+ * fallback list deliberately excludes Dallas, Houston and other remote cities.
+ * When coordinates are supplied, the precise radial distance takes precedence.
+ */
+export const XBOX_RADIUS_KM = 32.2;
+export const BOARD_GAME_RADIUS_KM = 161;
+const CENTRAL_TEXAS_CITIES = new Set([
+  ...AUSTIN_NEAR,
+  "georgetown", "leander", "liberty hill", "jarrell", "salado", "belton", "temple",
+  "troy", "waco", "woodway", "hewitt", "lorena", "mcgregor", "gatesville",
+  "killeen", "harker heights", "nolanville", "copperas cove", "lampasas",
+  "burnet", "marble falls", "horseshoe bay", "kingsland", "llano",
+  "johnson city", "blanco", "fredericksburg", "kerrville", "comfort",
+  "boerne", "bulverde", "canyon lake", "spring branch", "wimberley",
+  "san marcos", "new braunfels", "seguin", "schertz", "selma",
+  "universal city", "live oak", "cibolo", "converse", "helotes", "san antonio",
+  "lockhart", "luling", "gonzales", "bastrop", "cedar creek", "elgin",
+  "taylor", "hutto", "smithville", "giddings", "la grange", "schulenburg",
+  "rockdale", "cameron", "caldwell", "brenham", "bryan", "college station"
+]);
 const ALIASES = {
   367150: ["Dune War for Arrakis"],
   380109: ["Gibberers"],
@@ -66,17 +89,23 @@ function haversineKm(lat1, lon1, lat2, lon2) {
     Math.sin(toRad(lon2 - lon1) / 2) ** 2;
   return 6371 * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
-export function localListing(listing) {
-  if (listing.state && String(listing.state).toLowerCase() !== "tx") return false;
+export function localListing(listing, radiusKm = XBOX_RADIUS_KM) {
+  if (!listing || !Number.isFinite(radiusKm) || radiusKm <= 0) return false;
+  if (listing.state && normalize(listing.state) !== "tx" && normalize(listing.state) !== "texas") return false;
   if (Number.isFinite(listing.latitude) && Number.isFinite(listing.longitude)) {
-    return haversineKm(30.2672, -97.7431, listing.latitude, listing.longitude) <= 32.2;
+    return haversineKm(30.2672, -97.7431, listing.latitude, listing.longitude) <= radiusKm;
   }
-  // Basic Marketplace feeds offer city but not exact coordinates. Conservative whitelist.
+  // Listings frequently expose a city but not coordinates. Only allow known
+  // central-Texas cities; never assume "TX" alone means the item is nearby.
   const city = normalize(listing.city);
-  return Boolean(city && AUSTIN_NEAR.has(city));
+  if (!city) return false;
+  return radiusKm >= BOARD_GAME_RADIUS_KM
+    ? CENTRAL_TEXAS_CITIES.has(city)
+    : AUSTIN_NEAR.has(city);
 }
 export function matchListing(game, listing) {
-  return Boolean(game && listing && localListing(listing) && matchingTitle(game, listing.title));
+  return Boolean(game && listing && localListing(listing, BOARD_GAME_RADIUS_KM) &&
+    matchingTitle(game, listing.title));
 }
 export function matchWishlist(games, listings) {
   const unique = new Map();
