@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { matchListing, matchWishlist, normalize, searchTerm, titleVariants, localListing } from "./match.mjs";
+import { matchListing, matchWishlist, normalize, searchTerm, titleVariants, localListing, BOARD_GAME_RADIUS_KM, XBOX_RADIUS_KM } from "./match.mjs";
 
 const austin = (title, city = "Austin") => ({ id: "test-" + title, title, city, state: "TX", price: "$25", url: "https://www.facebook.com/marketplace/item/1/" });
 const dune = { bggId: 367150, name: "Dune: War for Arrakis", priority: 1 };
@@ -22,7 +22,7 @@ test("avoid unrelated keywords and false positives", () => {
   assert.equal(matchListing(foundation, austin("Makeup foundation and face powder")), false);
   assert.equal(matchListing(lotr, austin("Lord of the Rings duel figures")), false);
   assert.equal(matchListing(lotr, austin("The Lord of the Rings Duel for Middle-earth organizer insert")), false);
-  assert.equal(matchListing(lotr, austin("Lord of the Rings: Duel for Middle-earth board game", "San Antonio")), false);
+  assert.equal(matchListing(lotr, austin("Lord of the Rings: Duel for Middle-earth board game", "San Antonio")), true);
   assert.equal(matchListing(lotr, austin("Lord of the Rings: Duel for Middle-earth board game", "McKinney")), false);
 });
 
@@ -50,4 +50,30 @@ test("stable search variants and normalization", () => {
   assert.ok(titleVariants(lotr).some((s) => s.includes("Duel")));
   assert.ok(searchTerm({ name: "Cascadia" }).includes("board game"));
   assert.equal(titleVariants(imm).includes("Dune"), false);
+});
+
+test("board games reach San Antonio, Waco and Central Texas without expanding Xbox", () => {
+  assert.equal(BOARD_GAME_RADIUS_KM, 161);
+  assert.equal(XBOX_RADIUS_KM, 32.2);
+  const cityOnly = (city) => ({ city, state: "TX" });
+  for (const city of ["San Antonio", "Waco", "Temple", "Killeen", "New Braunfels",
+    "College Station", "Fredericksburg", "Marble Falls", "Seguin"]) {
+    assert.equal(localListing(cityOnly(city), BOARD_GAME_RADIUS_KM), true, city);
+  }
+  for (const city of ["San Antonio", "Waco", "College Station", "Fredericksburg"]) {
+    assert.equal(localListing(cityOnly(city)), false, "Xbox should stay local: " + city);
+  }
+  for (const city of ["McKinney", "Dallas", "Houston", "Lubbock"]) {
+    assert.equal(localListing(cityOnly(city), BOARD_GAME_RADIUS_KM), false, city);
+  }
+  assert.equal(localListing({ city: "San Antonio", state: "TX",
+    latitude: 29.4241, longitude: -98.4936 }, BOARD_GAME_RADIUS_KM), true);
+  assert.equal(localListing({ city: "Austin", state: "TX",
+    latitude: 29.7604, longitude: -95.3698 }, BOARD_GAME_RADIUS_KM), false,
+    "coordinates override misleading Austin city metadata");
+  assert.equal(localListing({ city: "San Antonio", state: "NM" }, BOARD_GAME_RADIUS_KM), false);
+  assert.equal(localListing({ city: "San Antonio", state: "TX" }), false,
+    "default local radius remains unchanged");
+  assert.equal(matchListing(foundation, austin("Foundations of Rome Board Game", "Waco")), true);
+  assert.equal(matchListing(foundation, austin("Makeup foundation powder", "San Antonio")), false);
 });
