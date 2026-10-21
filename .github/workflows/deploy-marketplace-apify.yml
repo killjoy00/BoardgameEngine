@@ -38,7 +38,7 @@ jobs:
 
   deploy:
     needs: test
-    if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && github.run_attempt == 1 && contains(github.event.head_commit.message, 'APIFY_MARKETPLACE_DEPLOY_20261020') }}
+    if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && github.run_attempt == 1 && contains(github.event.head_commit.message, 'APIFY_MARKETPLACE_RADIUS_20261021') }}
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     env:
