@@ -2,6 +2,7 @@
 // Secrets are injected as encrypted Apify Actor environment variables by the
 // one-time reviewed GitHub deployment workflow.
 import { matchWishlist } from "./match.mjs";
+import { boardGameSearchInput } from "./search-config.mjs";
 import {
   parseWishlist, collectionSummary, selectQueries, normalizeActorListing,
   xboxMatches, emptyOutbox, enqueueAlerts, prepareBatch, acknowledgeBatch, renderEmail
@@ -14,7 +15,6 @@ const TASKS = [
   { taskId: "ALjMVkp1UTpWXe817", bggId: 421006 },
   { taskId: "CzW5v08yZKJtmZTzY", bggId: "xbox" }
 ];
-const PROXY = { useApifyProxy: true };
 // A hosted Actor's APIFY_TOKEN has limited permissions and cannot read
 // the user's existing saved Marketplace tasks. The dedicated private Actor
 // receives an encrypted owner-provisioned token at deployment time.
@@ -138,19 +138,7 @@ async function getTaskResults(task) {
 }
 
 async function scrape(query) {
-  const input = {
-    searchKeyword: query.searchKeyword,
-    location: "Austin, Texas, United States",
-    radiusKm: 32,
-    sortBy: "creation_time_descend",
-    daysSinceListed: query.priority <= 2 ? "1" : query.priority === 5 ? "30" : "7",
-    getListingDetails: false,
-    getAllListingPhotos: false,
-    strictFiltering: true,
-    maxPagesPerUrl: 1,
-    onlyNewListings: false,
-    proxy: PROXY
-  };
+  const input = boardGameSearchInput(query);
   const created = await data("/acts/Y0QGH7cuqgKtNbEgt/runs?maxTotalChargeUsd=0.03",
     { method: "POST", body: input });
   if (!created?.id) throw new Error("Marketplace Actor returned no run ID");
